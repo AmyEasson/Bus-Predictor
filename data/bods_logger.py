@@ -160,7 +160,6 @@ def parse_siri(xml_bytes, polled_at):
         ))
     return rows
 
-
 def fetch(api_key, bbox, timeout=60):
     r = requests.get(
         ENDPOINT,
