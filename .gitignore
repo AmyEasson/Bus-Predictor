@@ -5,3 +5,8 @@ node_modules/
 .venv/
 .DS_Store
 *.sqlite3
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.out
+share/
