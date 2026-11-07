@@ -5,7 +5,32 @@ from typing import Optional
 from .database import get_db_connection
 import numpy as np
 
+# Import the search service we just created
+from .services.stops import search_bus_stops
+
 router = APIRouter(prefix="/api", tags=["buses"])
+
+@router.get("/stops/search")
+def search_stops(
+    q: str = Query(..., min_length=2),
+    limit: int = Query(10, ge=1, le=50)
+):
+    try:
+        search_term = q.strip()
+
+        if len(search_term) < 2:
+            raise HTTPException(
+                status_code=400,
+                detail="Search term must contain at least 2 characters"
+            )
+
+        # Use the dedicated stops service (automatically filters Metrolink and sorts)
+        return search_bus_stops(search_term, limit=limit)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/")
 def api_root():
@@ -28,7 +53,6 @@ def get_routes():
         con.close()
         return df.to_dict(orient="records")
     except Exception as e:
-        # Hackathon fallback if snapshot.sqlite isn't fully migrated/present yet
         return [
             {"published_line_name": "42", "active_buses": 5},
             {"published_line_name": "43", "active_buses": 3},
@@ -50,10 +74,7 @@ def get_buses_for_route(line_name: str, limit: Optional[int] = Query(100, le=500
         """
         df = pd.read_sql(query, con, params=(line_name, limit))
         con.close()
-        
-        # Replace NaN, NaT, Inf with None so FastAPI/JSON can serialize it cleanly
         df = df.replace({np.nan: None, np.inf: None, -np.inf: None})
-        
         return df.to_dict(orient="records")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -64,11 +85,16 @@ def get_all_live_buses(limit: Optional[int] = Query(150, le=500)):
     try:
         con = get_db_connection()
         query = """
-            SELECT operator_ref, vehicle_ref, published_line_name, destination_name, 
-                   latitude, longitude, bearing, recorded_at
-            FROM positions
-            WHERE latitude IS NOT NULL AND longitude IS NOT NULL
-            ORDER BY recorded_at DESC
+           SELECT p.operator_ref, p.vehicle_ref, p.published_line_name, p.destination_name,
+                p.latitude, p.longitude, p.bearing, p.recorded_at
+            FROM positions p
+            JOIN (SELECT operator_ref, vehicle_ref, MAX(recorded_at) AS latest
+                    FROM positions
+                    WHERE latitude IS NOT NULL AND longitude IS NOT NULL
+                    GROUP BY operator_ref, vehicle_ref) l
+            ON p.operator_ref = l.operator_ref
+            AND p.vehicle_ref = l.vehicle_ref
+            AND p.recorded_at = l.latest
             LIMIT ?;
         """
         df = pd.read_sql(query, con, params=(limit,))

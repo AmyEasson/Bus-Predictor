@@ -12,3 +12,4 @@ node_modules/
 *.paraquet
 share/
 gtfs/
+data/snapshot.sqlite
