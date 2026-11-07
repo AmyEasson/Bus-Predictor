@@ -122,3 +122,28 @@ button,input{font-family:inherit}
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+.hovered-stop-pin {
+  background: transparent;
+  border: none;
+}
+
+.hovered-stop-halo {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(255, 152, 0, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 12px rgba(255, 152, 0, 0.6);
+}
+
+.hovered-stop-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #ff9800;
+  border: 3px solid white;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+}

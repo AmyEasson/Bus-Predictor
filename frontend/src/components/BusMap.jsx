@@ -3,9 +3,13 @@ import L from 'leaflet';
 
 const hoveredStopIcon = L.divIcon({
   className: 'hovered-stop-pin',
-  html: '<div style="background-color: #ff9800; width: 16px; height: 16px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 5px rgba(0,0,0,0.5);"></div>',
-  iconSize: [16, 16],
-  iconAnchor: [8, 8]
+  html: `
+    <div class="hovered-stop-halo">
+      <div class="hovered-stop-dot"></div>
+    </div>
+  `,
+  iconSize: [40, 40],
+  iconAnchor: [20, 20]
 });
 
 export function BusMap({ buses = [], hoveredStop = null, children }) {
@@ -47,6 +51,7 @@ export function BusMap({ buses = [], hoveredStop = null, children }) {
         <Marker
           position={[hoveredStop.stop_lat, hoveredStop.stop_lon]}
           icon={hoveredStopIcon}
+          zIndexOffset={1000}
         >
           <Popup>
             <div>
