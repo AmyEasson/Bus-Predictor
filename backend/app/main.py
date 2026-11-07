@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
  
 from .routes import router
+from .mock_routes import router as mock_router
  
 app = FastAPI(title="Bus delay API", version="0.2.0")
  
@@ -20,3 +21,4 @@ def health():
  
  
 app.include_router(router)
+app.include_router(mock_router, prefix="/api")

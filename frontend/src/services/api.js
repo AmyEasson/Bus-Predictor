@@ -34,3 +34,16 @@ export async function fetchAllLiveBuses() {
     return [];
   }
 }
+
+// Search available stops by name
+export async function searchStops(query) {
+  try {
+    const response = await axios.get(`${API_BASE_URL}/api/stops/search`, {
+      params: { q: query, limit: 10 }
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error searching stops:', error);
+    return [];
+  }
+}
