@@ -1,24 +1,36 @@
-// frontend/src/services/api.js
-const API_BASE_URL = "http://localhost:8000";
+import axios from 'axios';
 
+const API_BASE_URL = 'http://localhost:8000';
+
+// Fetch summary active routes (for sidebar counts or route options)
 export async function fetchRoutes() {
   try {
-    const res = await fetch(`${API_BASE_URL}/api/routes`);
-    if (!res.ok) throw new Error("Failed to fetch routes");
-    return await res.json();
+    const response = await axios.get(`${API_BASE_URL}/api/routes`);
+    return response.data;
   } catch (error) {
-    console.error("API Error (fetchRoutes):", error);
+    console.error('Error fetching routes:', error);
     return [];
   }
 }
 
-export async function fetchBusesForRoute(lineName) {
+// Fetch actual GPS positions for a specific route line (e.g. "42")
+export async function fetchBusPositionsForRoute(lineName = "42") {
   try {
-    const res = await fetch(`${API_BASE_URL}/api/buses/${lineName}`);
-    if (!res.ok) throw new Error(`Failed to fetch buses for line ${lineName}`);
-    return await res.json();
+    const response = await axios.get(`${API_BASE_URL}/api/buses/${lineName}`);
+    return response.data; // Returns array of bus objects with latitude, longitude, vehicle_ref, etc.
   } catch (error) {
-    console.error("API Error (fetchBusesForRoute):", error);
+    console.error(`Error fetching positions for line ${lineName}:`, error);
+    return [];
+  }
+}
+
+// Fetch all live bus positions across all routes for the default map view
+export async function fetchAllLiveBuses() {
+  try {
+    const response = await axios.get(`${API_BASE_URL}/api/buses/all/live`);
+    return response.data; // Returns array of all active bus objects
+  } catch (error) {
+    console.error('Error fetching all live buses:', error);
     return [];
   }
 }

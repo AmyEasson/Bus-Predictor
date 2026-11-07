@@ -1,12 +1,26 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Header } from './components/Header';
 import { BusMap } from './components/BusMap';
+import { fetchAllLiveBuses } from './services/api';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('plan');
   const [fromLocation, setFromLocation] = useState('University of Manchester');
   const [toLocation, setToLocation] = useState('Piccadilly Gardens');
   const [timeMode, setTimeMode] = useState('Depart now');
+  const [buses, setBuses] = useState([]);
+
+  // Fetch all live buses on mount and poll every 15 seconds
+  useEffect(() => {
+    async function loadBuses() {
+      const data = await fetchAllLiveBuses();
+      setBuses(data);
+    }
+    
+    loadBuses();
+    const interval = setInterval(loadBuses, 15000);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <div style={{ width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: '#f8fafc', fontFamily: 'sans-serif', color: '#1f2937' }}>
@@ -108,8 +122,9 @@ export default function App() {
 
         </div>
 
+        {/* Right Content Area: Map Container with Live Buses */}
         <div style={{ flex: 1, height: '100%', borderRadius: '16px', border: '1px solid #cbd5e1', overflow: 'hidden' }}>
-          <BusMap buses={[]} />
+          <BusMap buses={buses} />
         </div>
 
       </div>
