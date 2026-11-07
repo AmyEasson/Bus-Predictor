@@ -181,18 +181,22 @@ def in_box(rows):
 
 
 def detect_bbox(api_key):
-    """Try both coordinate orders; keep the one that returns buses inside Greater Manchester."""
-    best_name, best_count = None, -1
+    """Try both coordinate orders; keep the one BODS actually applies as a filter.
+    A wrong order can make BODS ignore the box and return the whole country, so we pick the
+    order with the highest share of returned buses inside the box, not the highest count."""
+    best_name, best_share, best_count = None, -1.0, 0
     for name, bbox in BBOX_ORDERS.items():
         try:
             rows = parse_siri(fetch(api_key, bbox), "detect")
             n = in_box(rows)
-            print(f"  bbox {name:9s}: {len(rows)} vehicles returned, {n} inside the box", flush=True)
+            share = n / len(rows) if rows else 0.0
+            print(f"  bbox {name:9s}: {len(rows)} vehicles returned, {n} inside the box "
+                  f"({share:.0%})", flush=True)
         except Exception as e:
-            n = -1
+            n, share = 0, -1.0
             print(f"  bbox {name:9s}: error {e!r}", flush=True)
-        if n > best_count:
-            best_name, best_count = name, n
+        if n > 0 and share > best_share:
+            best_name, best_share, best_count = name, share, n
     if best_count <= 0:
         sys.exit("Neither bounding-box order returned buses in the area. "
                  "Check your API key and that BODS is up (try the URL in a browser).")
@@ -214,6 +218,9 @@ def poll_once(conn, api_key, bbox):
     polled_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
     try:
         rows = parse_siri(fetch(api_key, bbox), polled_at)
+        # Safety net: only store buses that really are inside the box
+        rows = [r for r in rows if r[16] is not None and r[17] is not None
+                and MIN_LAT <= r[16] <= MAX_LAT and MIN_LON <= r[17] <= MAX_LON]
         before = conn.total_changes
         conn.executemany(
             f"INSERT OR IGNORE INTO positions ({','.join(COLUMNS)}) "
