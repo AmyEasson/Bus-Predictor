@@ -23,9 +23,9 @@ def load_stops():
 def search_bus_stops(search_term: str, limit: int = 10):
     stops = load_stops()
 
-    # Filter out Metrolink tram stops safely
+    # Filter out all Metrolink stops
     if "stop_id" in stops.columns:
-        stops = stops[~stops["stop_id"].str.startswith("9400ZZ", na=False)]
+        stops = stops[~stops["stop_id"].str.startswith("940", na=False)]
 
     # Find stops containing the search term
     matches = stops[
