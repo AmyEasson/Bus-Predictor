@@ -160,6 +160,20 @@ def parse_siri(xml_bytes, polled_at):
         ))
     return rows
 
+def fetch_live_buses(api_key=None, bbox=BBOX_ORDERS["lon-first"]):
+    """Return the current Greater Manchester bus positions as a pandas DataFrame."""
+    import pandas as pd
+    if api_key is None:
+        load_dotenv()
+        api_key = os.environ.get("BODS_KEY") or os.environ.get("BODS_API_KEY")
+    polled_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    rows = parse_siri(fetch(api_key, bbox), polled_at)
+    df = pd.DataFrame(rows, columns=COLUMNS)
+    df = df[df.latitude.between(MIN_LAT, MAX_LAT) & df.longitude.between(MIN_LON, MAX_LON)]
+    for col in ("recorded_at", "polled_at", "origin_aimed_departure_time"):
+        df[col] = pd.to_datetime(df[col], utc=True, errors="coerce")
+    return df.reset_index(drop=True)
+
 
 def fetch(api_key, bbox, timeout=60):
     r = requests.get(
