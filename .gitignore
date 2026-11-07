@@ -5,3 +5,4 @@ node_modules/
 .venv/
 .DS_Store
 *.sqlite3
+.data/
