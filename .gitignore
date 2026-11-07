@@ -9,6 +9,7 @@ node_modules/
 *.sqlite-shm
 *.sqlite-wal
 *.out
+*.paraquet
 share/
 gtfs/
 data/snapshot.sqlite
