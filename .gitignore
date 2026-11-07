@@ -10,3 +10,4 @@ node_modules/
 *.sqlite-wal
 *.out
 share/
+gtfs/
