@@ -1,101 +1,246 @@
-import React, { useState, useEffect } from 'react';
-import { fetchRoutes, fetchBusesForRoute } from './services/api';
+import { useEffect, useMemo, useState } from 'react';
 import './App.css';
+import { Header } from './components/Header';
+import 'leaflet/dist/leaflet.css';
+import { BusMap } from './components/BusMap';
+import { fetchAllLiveBuses, searchStops } from './services/api';
+import { fetchDelayMap } from './services/delayApi';
+import { DelayPanel, DelayLegend } from './components/DelayPanel';
+import { DelayLayer } from './components/DelayLayer';
 
-function App() {
-  const [routes, setRoutes] = useState([]);
-  const [selectedRoute, setSelectedRoute] = useState(null);
-  const [buses, setBuses] = useState([]);
-  const [loadingBuses, setLoadingBuses] = useState(false);
+// TODO: replace with POST /route once the delay model is connected.
+const SAMPLE_ROUTES = [
+  { id: 1, label: 'Most reliable', tone: 'green', lines: ['42'], mins: 31, timetable: 29, delay: 2, risk: 12 },
+  { id: 2, label: 'Fastest on paper', tone: 'red', lines: ['43'], mins: 31, timetable: 22, delay: 9, risk: 68 },
+  { id: 3, label: 'Balanced', tone: 'amber', lines: ['142'], mins: 33, timetable: 26, delay: 7, risk: 41 },
+];
+const TONE = { green: 'var(--green)', amber: 'var(--amber)', red: 'var(--red)' };
+const TIME_MODES = ['Depart now', 'Arrive by', 'Tomorrow 08:15'];
 
-  // 1. Load all routes on component mount
+function StopAutocomplete({ label, onSelect, onHover, color }) {
+  const [query, setQuery] = useState('');
+  const [suggestions, setSuggestions] = useState([]);
+  const [isSelected, setIsSelected] = useState(false);
+
   useEffect(() => {
-    fetchRoutes().then(data => {
-      setRoutes(data);
-      if (data.length > 0) {
-        setSelectedRoute(data[0].published_line_name);
+    if (query.trim().length < 2 || isSelected) {
+      setSuggestions([]);
+      onHover(null); // Clear hover preview when typing or after selection
+      return;
+    }
+
+    let cancelled = false;
+
+    const timer = setTimeout(async () => {
+      const results = await searchStops(query.trim());
+
+      if (!cancelled) {
+        setSuggestions(results);
       }
-    });
-  }, []);
+    }, 250);
 
-  // 2. Fetch live buses whenever the selected route changes
-  useEffect(() => {
-    if (!selectedRoute) return;
-    setLoadingBuses(true);
-    fetchBusesForRoute(selectedRoute).then(data => {
-      setBuses(data);
-      setLoadingBuses(false);
-    });
-  }, [selectedRoute]);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [query, isSelected, onHover]);
+
+  const handleChange = (value) => {
+    setQuery(value);
+    setIsSelected(false);
+    onSelect(null);
+    onHover(null);
+  };
+
+  const handleSelect = (stop) => {
+    setQuery(stop.stop_name);
+    setIsSelected(true);
+    setSuggestions([]);
+    onHover(null);
+    onSelect(stop);
+  };
 
   return (
-    <div style={{ padding: '30px', fontFamily: 'system-ui, sans-serif', maxWidth: '1000px', margin: '0 auto' }}>
-      <h1>🚌 Greater Manchester Bus Tracker</h1>
+    <div className="field autocomplete-field">
+      <span className="pin" style={{ background: color }} />
 
-      {/* Route Selector Pills */}
-      <div style={{ margin: '20px 0' }}>
-        <h3>Select Route:</h3>
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', maxHeight: '150px', overflowY: 'auto', padding: '5px', border: '1px solid #ddd', borderRadius: '6px' }}>
-          {routes.map(r => (
-            <button
-              key={r.published_line_name}
-              onClick={() => setSelectedRoute(r.published_line_name)}
-              style={{
-                padding: '8px 14px',
-                background: selectedRoute === r.published_line_name ? '#0070f3' : '#f0f0f0',
-                color: selectedRoute === r.published_line_name ? '#fff' : '#333',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontWeight: 'bold'
-              }}
-            >
-              Line {r.published_line_name} <span style={{ fontSize: '0.8em', opacity: 0.8 }}>({r.active_buses})</span>
-            </button>
-          ))}
-        </div>
+      <div className="autocomplete-content">
+        <label>{label}</label>
+
+        <input
+          value={query}
+          onChange={(e) => handleChange(e.target.value)}
+          placeholder="Search for a bus stop..."
+          autoComplete="off"
+        />
+
+        {suggestions.length > 0 && !isSelected && (
+          <div className="stop-dropdown">
+            {suggestions.map((stop) => (
+              <button
+                type="button"
+                className="stop-option"
+                key={stop.stop_id}
+                onMouseDown={(e) => e.preventDefault()}
+                onMouseEnter={() => onHover(stop)} // Preview stop on map on hover
+                onMouseLeave={() => onHover(null)} // Clear preview on mouse leave
+                onClick={() => handleSelect(stop)}
+              >
+                <div className="stop-info">
+                  <span className="stop-name">{stop.stop_name}</span>
+                  {stop.stop_code && <span className="stop-code">Code: {stop.stop_code}</span>}
+                </div>
+                <span className="stop-id">{stop.stop_id}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {query.trim().length >= 2 &&
+          suggestions.length === 0 &&
+          !isSelected && (
+            <div className="stop-dropdown empty">
+              No matching stops found
+            </div>
+          )}
       </div>
-
-      <hr style={{ margin: '25px 0', border: 'none', borderTop: '1px solid #eee' }} />
-
-      {/* Active Buses Display */}
-      <h2>Live Positions for Line {selectedRoute}</h2>
-      {loadingBuses ? (
-        <p>Loading live vehicle positions...</p>
-      ) : (
-        <div style={{ overflowX: 'auto', border: '1px solid #e1e4e8', borderRadius: '6px' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '14px' }}>
-            <thead>
-              <tr style={{ background: '#f6f8fa', borderBottom: '1px solid #e1e4e8' }}>
-                <th style={{ padding: '12px' }}>Vehicle Ref</th>
-                <th style={{ padding: '12px' }}>Destination</th>
-                <th style={{ padding: '12px' }}>Latitude, Longitude</th>
-                <th style={{ padding: '12px' }}>Heading</th>
-                <th style={{ padding: '12px' }}>Recorded At (UTC)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {buses.length === 0 ? (
-                <tr>
-                  <td colSpan="5" style={{ padding: '20px', textAlign: 'center', color: '#666' }}>No active buses found for this route right now.</td>
-                </tr>
-              ) : (
-                buses.map((bus, idx) => (
-                  <tr key={idx} style={{ borderBottom: '1px solid #f0f0f0' }}>
-                    <td style={{ padding: '10px', fontWeight: 'bold' }}>{bus.operator_ref}-{bus.vehicle_ref}</td>
-                    <td style={{ padding: '10px' }}>{bus.destination_name || "Unknown"}</td>
-                    <td style={{ padding: '10px', fontFamily: 'monospace' }}>{bus.latitude?.toFixed(4)}, {bus.longitude?.toFixed(4)}</td>
-                    <td style={{ padding: '10px' }}>{bus.bearing ? `${bus.bearing}°` : "N/A"}</td>
-                    <td style={{ padding: '10px', color: '#555' }}>{bus.recorded_at}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
     </div>
   );
 }
 
-export default App;
+function RouteCard({ r }) {
+  return (
+    <div className="card">
+      <div className="card-top">
+        <span className={`chip ${r.tone}`}>{r.label}</span>
+      </div>
+      <div className="big">{r.mins} min</div>
+      <div className="meta">
+        {r.lines.map((l) => <span key={l} className="line-tag">{l}</span>)}
+        <span>timetable {r.timetable} min</span>
+        <span style={{ color: TONE[r.tone], fontWeight: 600 }}>+{r.delay} min predicted</span>
+      </div>
+      <div className="bar"><i style={{ width: `${r.risk}%`, background: TONE[r.tone] }} /></div>
+    </div>
+  );
+}
+
+export default function App() {
+  const [tab, setTab] = useState('plan');
+  const [fromStop, setFromStop] = useState(null);
+  const [toStop, setToStop] = useState(null);
+  const [hoveredStop, setHoveredStop] = useState(null); // Tracks stop preview on map hover
+  
+  const [timeMode, setTimeMode] = useState(TIME_MODES[0]);
+  const [rows, setRows] = useState([]);
+  const [firstLoad, setFirstLoad] = useState(true);
+  const [searched, setSearched] = useState(false);
+  const [colourBy, setColourBy] = useState('overall');
+  const [factors, setFactors] = useState(['weather', 'time_of_day', 'events']);
+  const [hour, setHour] = useState(Math.min(18, Math.max(7, new Date().getHours())));
+  const [delay, setDelay] = useState(null);
+  const [delayErr, setDelayErr] = useState(null);
+
+  useEffect(() => {
+    const load = async () => {
+      try { setRows(await fetchAllLiveBuses()); } finally { setFirstLoad(false); }
+    };
+    load();
+    const t = setInterval(load, 15000);
+    return () => clearInterval(t);
+  }, []);
+
+  useEffect(() => {
+    if (tab !== 'delay-map') return;
+    let stale = false;
+    fetchDelayMap({ hour, colourBy, factors })
+      .then((d) => { if (!stale) { setDelay(d); setDelayErr(null); } })
+      .catch((e) => { if (!stale) setDelayErr(e.message); });
+    return () => { stale = true; };
+  }, [tab, hour, colourBy, factors]);
+
+  const toggleFactor = (k) => setFactors((f) => (f.includes(k) ? f.filter((x) => x !== k) : [...f, k]));
+
+  // One marker per vehicle (newest fix), and the time of the newest fix overall.
+  const { buses, asOf } = useMemo(() => {
+    const latest = new Map();
+    for (const b of rows) {
+      if (b.latitude == null || b.longitude == null) continue;
+      const k = `${b.operator_ref}|${b.vehicle_ref}`;
+      if (!latest.has(k) || b.recorded_at > latest.get(k).recorded_at) latest.set(k, b);
+    }
+    const list = [...latest.values()];
+    const newest = list.reduce((m, b) => Math.max(m, Date.parse(b.recorded_at) || 0), 0);
+    return { buses: list, asOf: newest ? new Date(newest) : null };
+  }, [rows]);
+
+  return (
+    <div className="app">
+      <Header activeTab={tab} setActiveTab={setTab} asOf={asOf} />
+      <div className="main">
+        <aside className="side">
+          {tab === 'delay-map' ? (
+            <DelayPanel data={delay} error={delayErr} colourBy={colourBy} setColourBy={setColourBy} factors={factors} toggleFactor={toggleFactor} hour={hour} setHour={setHour} />
+          ) : searched ? (
+            <>
+              <button className="back" onClick={() => setSearched(false)}>← Edit search</button>
+              <div><h1>{fromStop.stop_name} to {toStop.stop_name}</h1><p className="sub">3 routes · {timeMode.toLowerCase()}</p></div>
+              <div className="note warn"><div><strong>Sample results</strong>Not real predictions yet.</div></div>
+              {SAMPLE_ROUTES.map((r) => <RouteCard key={r.id} r={r} />)}
+            </>
+          ) : (
+            <>
+              <div><h1>Where to?</h1><p className="sub">Routes ranked by predicted delay, not just the timetable.</p></div>
+              
+              <StopAutocomplete
+                label="From"
+                onSelect={setFromStop}
+                onHover={setHoveredStop}
+                color="#2d55d4"
+              />
+
+              <StopAutocomplete
+                label="To"
+                onSelect={setToStop}
+                onHover={setHoveredStop}
+                color="#d9534f"
+              />
+
+              <div className="pills">
+                {TIME_MODES.map((m) => (
+                  <button key={m} className={`pill ${timeMode === m ? 'on' : ''}`} onClick={() => setTimeMode(m)}>{m}</button>
+                ))}
+              </div>
+              <button
+                className="cta"
+                disabled={!fromStop || !toStop}
+                onClick={() => setSearched(true)}
+              >
+                Find routes
+              </button>
+              <div className="note"><span className="dot" style={{ marginTop: 4, flex: 'none' }} /><div><strong>Delay predictions on</strong>Uses live bus positions, weather and local events</div></div>
+              <div className="section">Network right now</div>
+              <div className="stats">
+                <div className="stat"><b>–</b><span>buses on time</span></div>
+                <div className="stat"><b>–</b><span>delayed &gt; 5 min</span></div>
+                <div className="stat"><b>–</b><span>avg delay</span></div>
+              </div>
+            </>
+          )}
+        </aside>
+        
+        <div className="mapwrap">
+          {firstLoad && <div className="toast">Loading bus positions…</div>}
+          {tab === 'plan' && !firstLoad && buses.length === 0 && <div className="toast err">No bus data found</div>}
+          
+          {/* Pass hoveredStop down into BusMap */}
+          <BusMap buses={tab === 'plan' ? buses : []} hoveredStop={hoveredStop}>
+            {tab === 'delay-map' && <DelayLayer data={delay} />}
+          </BusMap>
+          
+          {tab === 'delay-map' && <DelayLegend data={delay} />}
+        </div>
+      </div>
+    </div>
+  );
+}
