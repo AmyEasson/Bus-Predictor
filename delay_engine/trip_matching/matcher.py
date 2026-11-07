@@ -99,6 +99,7 @@ def run_passes(runs, trip_days, tol, jtol, ftol):
     c1 = c1[c1.gap_s <= jtol]
     # journey codes are only unique per operator, so require exactly one trip left
     c1 = c1[c1.groupby("run_id")["trip_id"].transform("nunique") == 1]
+    # the uniqueness filter above guarantees pick() never produces ambiguous rows here
     b1, _ = pick(c1)
     matched.append(b1.assign(match_method="journey_ref"))
     left = runs[~runs.run_id.isin(b1.run_id)]
@@ -107,6 +108,8 @@ def run_passes(runs, trip_days, tol, jtol, ftol):
     c2 = left.merge(trip_days, left_on=["line", "origin_ref", "service_date"],
                     right_on=["route_short_name", "first_stop_id", "service_date"])
     c2 = with_gap(c2)
+    # tol=0 by default (exact second match); raise to ~60 s if pass-2 match rates look low,
+    # e.g. if the live feed rounds aimed times to the minute but the timetable has odd seconds
     c2 = c2[c2.gap_s <= tol]
     b2, a2 = pick(c2)
     matched.append(b2.assign(match_method="exact"))
@@ -157,6 +160,7 @@ def match(runs, trip_starts, service_days, tol=0, jtol=120, ftol=300, early_s=5 
 
 
 def unmatched_reason(um, trip_starts, trip_days):
+    # diagnostic only — Python loop is fine since this runs once on the leftover set
     lines = set(trip_starts.route_short_name)
     line_day = set(zip(trip_days.route_short_name, trip_days.service_date))
     out = []
