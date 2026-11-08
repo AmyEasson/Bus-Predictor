@@ -1,4 +1,4 @@
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, CircleMarker, Polyline } from 'react-leaflet';
 import L from 'leaflet';
 
 const hoveredStopIcon = L.divIcon({
@@ -67,26 +67,46 @@ export function BusMap({
         </Marker>
       )}
 
+      {/* Selected journey route line */}
+      {selectedJourney?.stops?.length > 1 && (
+        <Polyline
+          positions={selectedJourney.stops
+            .filter(stop => stop.stop_lat != null && stop.stop_lon != null)
+            .map(stop => [stop.stop_lat, stop.stop_lon])}
+          pathOptions={{
+            color: '#276749',
+            weight: 5,
+            opacity: 0.85,
+          }}
+        />
+      )}
+
       {/* Selected journey stops */}
       {selectedJourney?.stops?.map((stop, index) => {
         if (stop.stop_lat == null || stop.stop_lon == null) return null;
 
+        const isOrigin = index === 0;
+        const isDestination = index === selectedJourney.stops.length - 1;
+
         return (
-          <Marker
+          <CircleMarker
             key={`${selectedJourney.trip_id}-${stop.stop_sequence}`}
-            position={[stop.stop_lat, stop.stop_lon]}
+            center={[stop.stop_lat, stop.stop_lon]}
+            radius={isOrigin || isDestination ? 9 : 5}
+            pathOptions={{
+              color: isOrigin ? '#ffffff' : '#276749',
+              fillColor: isOrigin ? '#38a169' : isDestination ? '#1a4731' : '#6b9b7a',
+              fillOpacity: 1,
+              weight: 2.5,
+            }}
           >
             <Popup>
               <strong>{stop.stop_name}</strong>
               <div>
-                {index === 0
-                  ? 'Origin'
-                  : index === selectedJourney.stops.length - 1
-                    ? 'Destination'
-                    : 'Along the route'}
+                {isOrigin ? 'Origin' : isDestination ? 'Destination' : 'Along the route'}
               </div>
             </Popup>
-          </Marker>
+          </CircleMarker>
         );
       })}
 
