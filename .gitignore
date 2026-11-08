@@ -12,4 +12,12 @@ node_modules/
 *.paraquet
 share/
 gtfs/
-data/snapshot.sqlite
+data/snapshot.sqlite/*.parquet
+/snapshot.sqlite
+data/bods_archive/
+delay_engine/archival_data/traffic_data/
+delay_engine/archival_data/roadwork_permits/
+delay_engine/trip_matching/out/
+*.log
+nohup.out
+__pycache__/
