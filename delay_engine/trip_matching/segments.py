@@ -12,7 +12,7 @@ Time bands (local time of the scheduled arrival at stop A, by service-date weekd
   weekday_off_peak (other) | weekend (Sat/Sun)
 
 Usage (from trip_matching/):
-  python3 segments.py --gtfs-dir ../.. --out-dir out [--min-n 5]
+  python3 segments.py --gtfs-dir ../../data --out-dir out [--min-n 5]
 Outputs: out/segments.parquet and out/segments.csv
 """
 import argparse

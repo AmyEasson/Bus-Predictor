@@ -1,6 +1,7 @@
 import axios from 'axios';
 
-const API_BASE_URL = 'http://localhost:8000';
+// Override with VITE_API_URL in frontend/.env (e.g. VITE_API_URL=http://localhost:8000)
+export const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
 
 // Fetch summary active routes (for sidebar counts or route options)
 export async function fetchRoutes() {

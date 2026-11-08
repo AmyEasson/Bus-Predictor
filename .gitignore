@@ -1,22 +1,33 @@
+# Python
 __pycache__/
 *.pyc
-.env
-node_modules/
 .venv/
+
+# Node
+node_modules/
+
+# Secrets / local editor + OS files
+.env
+.vscode
 .DS_Store
-*.sqlite3
+
+# Databases. NOTE: data/snapshot.sqlite is already tracked (force-added), so this rule
+# doesn't stop changes to it being committed - only new .sqlite files are ignored.
 *.sqlite
+*.sqlite3
 *.sqlite-shm
 *.sqlite-wal
-*.out
-*.paraquet
-share/
+
+# Large / regenerable data
 gtfs/
-data/snapshot.sqlite
-model/models
-bods_archive/
-analysis*.sqlite
-delay_engine/model/out/
-delay_engine/model/models/
-delay_engine/model/figures/
-out_archive/
+share/
+data/bods_archive/
+delay_engine/archival_data/traffic_data/
+delay_engine/archival_data/roadwork_permits/
+# pipeline outputs (the few files in here that are already tracked stay tracked)
+delay_engine/trip_matching/out/
+
+# Logs
+*.out
+*.log
+nohup.out

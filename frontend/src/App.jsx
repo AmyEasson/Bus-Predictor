@@ -11,7 +11,8 @@ import { DelayLayer } from './components/DelayLayer';
 import { PredictionBadge } from './components/PredictionBadge';
 import { rankJourneys, SortPills, JourneyLabel } from './components/JourneyRanking';
 
-// TODO: replace with POST /route once the delay model is connected.
+// Not rendered yet: RouteCard below is kept for when journeys get predicted delays.
+// TODO: replace with real data once the delay engine is connected.
 const SAMPLE_ROUTES = [
   { id: 1, label: 'Most reliable', tone: 'green', lines: ['42'], mins: 31, timetable: 29, delay: 2, risk: 12 },
   { id: 2, label: 'Fastest on paper', tone: 'red', lines: ['43'], mins: 31, timetable: 22, delay: 9, risk: 68 },
@@ -668,8 +669,8 @@ export default function App() {
                   style={{ marginTop: 4, flex: 'none' }}
                 />
                 <div>
-                  <strong>Delay predictions on</strong>
-                  Uses live bus positions, weather and local events
+                  <strong>Timetable times only</strong>
+                  Delay predictions aren't connected yet, so journeys show scheduled times
                 </div>
               </div>
 

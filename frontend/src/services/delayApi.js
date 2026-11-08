@@ -1,5 +1,5 @@
-// Change this if your existing services/api.js uses a different base URL.
-const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8000/api';
+import axios from 'axios';
+import { API_BASE_URL } from './api';
 
 export const BAND_COLOUR = {
   on_time: '#2f9e5b',
@@ -12,10 +12,14 @@ export const BAND_COLOUR = {
 export const bandOf = (m) => (m < 2 ? 'on_time' : m < 5 ? 'minor' : m < 8 ? 'moderate' : 'severe');
 
 export async function fetchDelayMap({ hour, colourBy = 'overall', factors }) {
-  const p = new URLSearchParams({ colour_by: colourBy });
-  if (hour != null) p.set('hour', hour);
-  if (factors) p.set('factors', factors.join(','));
-  const res = await fetch(`${BASE}/delay-map?${p}`);
-  if (!res.ok) throw new Error(`Delay map request failed (${res.status})`);
-  return res.json();
+  const params = { colour_by: colourBy };
+  if (hour != null) params.hour = hour;
+  if (factors) params.factors = factors.join(',');
+  try {
+    const res = await axios.get(`${API_BASE_URL}/api/delay-map`, { params });
+    return res.data;
+  } catch (error) {
+    // keep the old message shape: App.jsx shows error.message in the panel
+    throw new Error(`Delay map request failed (${error.response?.status ?? error.message})`);
+  }
 }
