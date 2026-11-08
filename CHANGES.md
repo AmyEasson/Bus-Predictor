@@ -43,3 +43,40 @@ Adds steps 3 and 4 of the trip-matching pipeline: once runs are matched to timet
 ### `bods_logger.py` (root-level copy)
 
 - **Extracted `_inside(r)` predicate.** The bounding-box check (lat/lon not None and within the MIN/MAX bounds) was written identically in `in_box()` and inline in `poll_once()`. Both now call a shared `_inside(r)` helper. Note: this change is only in the root copy, not in the tracked `data/bods_logger.py`.
+
+
+## Journey planning and transfer search (2026-11-08)
+
+Adds timetable-based journey planning to the application, supporting both direct bus journeys and journeys involving one transfer.
+
+### Added
+
+- **`backend/app/services/journey.py`**. Implements timetable-based journey searches using the GTFS Parquet data:
+  - Finds direct journeys between two bus stops.
+  - Finds journeys involving one transfer between different bus routes.
+  - Checks service calendars and calendar exceptions to ensure services operate on the selected date.
+  - Calculates departure times, arrival times and total journey durations.
+  - Includes the stops served by each journey, allowing routes to be displayed on the map.
+
+- **Transfer journey search**. Introduces the following constraints:
+  - Maximum of one transfer.
+  - Minimum interchange wait of 5 minutes.
+  - Maximum interchange wait of 30 minutes.
+  - Maximum total journey duration of 120 minutes.
+  - Excludes Metrolink stops.
+  - Requires the connecting service to use a different bus route.
+  - Removes duplicate results for the same pair of trips.
+
+- **`/api/journeys` endpoint** (`backend/app/routes.py`). Exposes journey search through the FastAPI backend, accepting origin and destination stop IDs, a travel date, and optional departure/arrival time constraints. Supports including or excluding stop details in the response.
+
+- **Frontend journey results** (`App.jsx`):
+  - Displays direct and one-transfer journeys together.
+  - Shows route numbers, departure and arrival times, and journey durations.
+  - Distinguishes direct journeys from journeys requiring a change.
+  - Displays the interchange stop and transfer waiting time.
+  - Provides expandable journey-leg and stop information.
+  - Supports selecting a journey for further inspection.
+
+### Changed
+
+- Updated the frontend journey result rendering to accommodate both direct and transfer journey response structures while preserving existing direct journey functionality.

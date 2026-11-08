@@ -1,4 +1,4 @@
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, CircleMarker, Polyline } from 'react-leaflet';
 import L from 'leaflet';
 
 const hoveredStopIcon = L.divIcon({
@@ -12,7 +12,12 @@ const hoveredStopIcon = L.divIcon({
   iconAnchor: [20, 20]
 });
 
-export function BusMap({ buses = [], hoveredStop = null, children }) {
+export function BusMap({
+  buses = [],
+  hoveredStop = null,
+  selectedJourney = null,
+  children
+}) {
   // Safely check if hoveredStop has valid numeric coordinates
   const hasValidHoverStop = 
     hoveredStop && 
@@ -31,7 +36,7 @@ export function BusMap({ buses = [], hoveredStop = null, children }) {
       />
 
       {/* Render live buses safely */}
-      {buses.map((bus) => {
+      {!selectedJourney && buses.map((bus) => {
         if (bus.latitude == null || bus.longitude == null) return null;
         return (
           <Marker 
@@ -61,6 +66,49 @@ export function BusMap({ buses = [], hoveredStop = null, children }) {
           </Popup>
         </Marker>
       )}
+
+      {/* Selected journey route line */}
+      {selectedJourney?.stops?.length > 1 && (
+        <Polyline
+          positions={selectedJourney.stops
+            .filter(stop => stop.stop_lat != null && stop.stop_lon != null)
+            .map(stop => [stop.stop_lat, stop.stop_lon])}
+          pathOptions={{
+            color: '#276749',
+            weight: 5,
+            opacity: 0.85,
+          }}
+        />
+      )}
+
+      {/* Selected journey stops */}
+      {selectedJourney?.stops?.map((stop, index) => {
+        if (stop.stop_lat == null || stop.stop_lon == null) return null;
+
+        const isOrigin = index === 0;
+        const isDestination = index === selectedJourney.stops.length - 1;
+
+        return (
+          <CircleMarker
+            key={`${selectedJourney.trip_id}-${stop.stop_sequence}`}
+            center={[stop.stop_lat, stop.stop_lon]}
+            radius={isOrigin || isDestination ? 9 : 5}
+            pathOptions={{
+              color: isOrigin ? '#ffffff' : '#276749',
+              fillColor: isOrigin ? '#38a169' : isDestination ? '#1a4731' : '#6b9b7a',
+              fillOpacity: 1,
+              weight: 2.5,
+            }}
+          >
+            <Popup>
+              <strong>{stop.stop_name}</strong>
+              <div>
+                {isOrigin ? 'Origin' : isDestination ? 'Destination' : 'Along the route'}
+              </div>
+            </Popup>
+          </CircleMarker>
+        );
+      })}
 
       {children}
     </MapContainer>
