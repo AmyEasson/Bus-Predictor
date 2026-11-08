@@ -4,6 +4,7 @@ import pandas as pd
 from typing import Optional
 from .database import get_db_connection
 import numpy as np
+from datetime import date
 
 from .services.stops import search_bus_stops
 from .services.journey import find_direct_journeys
@@ -104,23 +105,33 @@ def get_all_live_buses(limit: Optional[int] = Query(150, le=500)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @router.get("/journeys")
 def get_journeys(
     origin_stop_id: str = Query(..., min_length=1),
     destination_stop_id: str = Query(..., min_length=1),
+    travel_date: date = Query(...),
     limit: int = Query(10, ge=1, le=50),
-    include_stops: bool = Query(False)
+    include_stops: bool = Query(False),
+    departure_after: Optional[str] = Query(
+    None,
+    pattern=r"^([01]\d|2[0-3]):[0-5]\d$"),
+    arrive_by: Optional[str] = Query(
+    None,
+    pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
 ):
-    """Find direct scheduled bus journeys between two stops."""
+    """Find direct bus journeys operating on a selected date."""
 
     try:
         journeys = find_direct_journeys(
             origin_stop_id=origin_stop_id,
             destination_stop_id=destination_stop_id,
-            limit=limit
+            travel_date=travel_date,
+            limit=limit,
+            departure_after=departure_after,
+            arrive_by=arrive_by
         )
 
-        # Remove detailed stop information unless requested
         if not include_stops:
             journeys = [
                 {
@@ -134,6 +145,7 @@ def get_journeys(
         return {
             "origin_stop_id": origin_stop_id,
             "destination_stop_id": destination_stop_id,
+            "travel_date": travel_date.isoformat(),
             "journey_count": len(journeys),
             "journeys": journeys
         }

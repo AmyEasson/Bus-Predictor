@@ -3,6 +3,7 @@ from pathlib import Path
 from functools import lru_cache
 
 import pandas as pd
+from datetime import date
 
 
 # Project root / data directory
@@ -35,10 +36,55 @@ def load_timetable_data():
     return stop_times, bus_trips, bus_routes, stops
 
 
+def get_active_service_ids(travel_date: date):
+    """Return all GTFS services operating on a particular date."""
+
+    _, _, _, _ = load_timetable_data()
+
+    calendar = pd.read_parquet(DATA_PATH / "calendar.parquet")
+    exceptions = pd.read_parquet(DATA_PATH / "calendar_dates.parquet")
+
+    date_string = travel_date.strftime("%Y%m%d")
+
+    weekday_columns = [
+        "monday", "tuesday", "wednesday", "thursday",
+        "friday", "saturday", "sunday"
+    ]
+
+    weekday_column = weekday_columns[travel_date.weekday()]
+
+    # Regular services operating on this weekday
+    active = calendar[
+        (calendar["start_date"] <= date_string)
+        & (calendar["end_date"] >= date_string)
+        & (calendar[weekday_column] == "1")
+    ]
+
+    active_service_ids = set(active["service_id"])
+
+    # Apply date-specific exceptions
+    date_exceptions = exceptions[
+        exceptions["date"] == date_string
+    ]
+
+    for _, exception in date_exceptions.iterrows():
+        service_id = exception["service_id"]
+
+        if exception["exception_type"] == "1":
+            active_service_ids.add(service_id)
+        elif exception["exception_type"] == "2":
+            active_service_ids.discard(service_id)
+
+    return active_service_ids
+
+
 def find_direct_journeys(
     origin_stop_id: str,
     destination_stop_id: str,
+    travel_date: date,
     limit: int = 10,
+    departure_after: str | None = None,
+    arrive_by: str | None = None,
 ):
     """
     Find scheduled direct bus journeys between two stops.
@@ -87,6 +133,9 @@ def find_direct_journeys(
         how="inner",
     )
 
+    if journeys.empty:
+        return []
+
     # The origin must occur before the destination
     journeys = journeys[
         journeys["origin_sequence"] < journeys["destination_sequence"]
@@ -101,6 +150,16 @@ def find_direct_journeys(
         on="trip_id",
         how="left",
     )
+
+    # Only keep services operating on the selected date
+    active_service_ids = get_active_service_ids(travel_date)
+
+    journeys = journeys[
+        journeys["service_id"].isin(active_service_ids)
+    ].copy()
+
+    if journeys.empty:
+        return []
 
     journeys = journeys.merge(
         routes[["route_id", "route_short_name"]],
@@ -119,6 +178,24 @@ def find_direct_journeys(
         journeys["duration_seconds"].notna()
         & (journeys["duration_seconds"] >= 0)
     ].copy()
+
+    # Only keep journeys departing at or after the requested time
+    if departure_after:
+        hours, minutes = map(int, departure_after.split(":"))
+        departure_seconds = hours * 3600 + minutes * 60
+
+        journeys = journeys[
+            journeys["departure_seconds"] >= departure_seconds
+        ].copy()
+
+    # Only keep journeys arriving at or before the requested time
+    if arrive_by:
+        hours, minutes = map(int, arrive_by.split(":"))
+        arrival_seconds = hours * 3600 + minutes * 60
+
+        journeys = journeys[
+            journeys["arrival_seconds"] <= arrival_seconds
+        ].copy()
 
     # Earliest departures first
     journeys = journeys.sort_values(
