@@ -1,36 +1,81 @@
-const keyOf = (j) => (j.journey_type === 'transfer' ? j.legs.map((l) => l.trip_id).join('-') : j.trip_id);
 
-// Tags the best journeys ("Most reliable", "Fastest on paper") and sorts the list, like the Figma.
-// With fewer than two predicted journeys there is nothing to compare, so it falls back to departure order.
+const keyOf = (journey) => {
+  if (journey.journey_type === 'transfer') {
+    return journey.legs.map((leg) => leg.trip_id).join('-');
+  }
+
+  return journey.trip_id;
+};
+
 export function rankJourneys(journeys, sortBy = 'reliable') {
-  const covered = journeys.filter((j) => j.prediction?.covered);
-  const reliable = covered.length > 1
-    ? covered.reduce((a, b) => (b.prediction.delay_p90_min < a.prediction.delay_p90_min ? b : a))
-    : null;
-  const fastest = journeys.length > 1
-    ? journeys.reduce((a, b) => (b.duration_minutes < a.duration_minutes ? b : a))
+  if (!journeys.length) return [];
+
+  const allHavePredictions = journeys.every(
+    (journey) => journey.prediction?.covered &&
+      Number.isFinite(journey.prediction.delay_p90_min)
+  );
+
+  const fastest = journeys.reduce((best, journey) =>
+    journey.duration_minutes < best.duration_minutes ? journey : best
+  );
+
+  const mostReliable = allHavePredictions && journeys.length > 1
+    ? journeys.reduce((best, journey) =>
+        journey.prediction.delay_p90_min < best.prediction.delay_p90_min
+          ? journey
+          : best
+      )
     : null;
 
-  const tagged = journeys.map((j) => {
+  const tagged = journeys.map((journey) => {
     let label = null;
-    if (reliable && keyOf(j) === keyOf(reliable)) label = { text: 'Most reliable', chip: 'green' };
-    else if (fastest && keyOf(j) === keyOf(fastest)) {
-      label = { text: 'Fastest on paper', chip: j.prediction?.risk_level === 'high' ? 'red' : 'amber' };
+
+    if (mostReliable && keyOf(journey) === keyOf(mostReliable)) {
+      label = { text: 'Most reliable', chip: 'green' };
+    } else if (journeys.length > 1 && keyOf(journey) === keyOf(fastest)) {
+      label = {
+        text: 'Fastest on paper',
+        chip: journey.prediction?.risk_level === 'high' ? 'red' : 'amber',
+      };
     }
-    return { ...j, _label: label };
+
+    return { ...journey, _label: label };
   });
 
-  const byDeparture = (a, b) => a.departure_time.localeCompare(b.departure_time);
-  if (sortBy === 'departure' || covered.length < 2) return tagged.sort(byDeparture);
-  const p90 = (j) => (j.prediction?.covered ? j.prediction.delay_p90_min : Infinity);
-  return tagged.sort((a, b) => p90(a) - p90(b) || byDeparture(a, b));
+  const byDeparture = (a, b) =>
+    a.departure_time.localeCompare(b.departure_time);
+
+  if (sortBy === 'departure') {
+    return tagged.sort(byDeparture);
+  }
+
+  const predictedDelay = (journey) =>
+    journey.prediction?.covered &&
+    Number.isFinite(journey.prediction.delay_p90_min)
+      ? journey.prediction.delay_p90_min
+      : Infinity;
+
+  return tagged.sort(
+    (a, b) => predictedDelay(a) - predictedDelay(b) ||
+      byDeparture(a, b)
+  );
 }
 
 export function SortPills({ value, onChange }) {
   return (
     <div className="pills">
-      {[['reliable', 'Most reliable first'], ['departure', 'Earliest first']].map(([id, name]) => (
-        <button type="button" key={id} className={`pill ${value === id ? 'on' : ''}`} onClick={() => onChange(id)}>{name}</button>
+      {[
+        ['reliable', 'Most reliable first'],
+        ['departure', 'Earliest first'],
+      ].map(([id, name]) => (
+        <button
+          type="button"
+          key={id}
+          className={`pill ${value === id ? 'on' : ''}`}
+          onClick={() => onChange(id)}
+        >
+          {name}
+        </button>
       ))}
     </div>
   );
@@ -38,5 +83,10 @@ export function SortPills({ value, onChange }) {
 
 export function JourneyLabel({ journey }) {
   if (!journey._label) return null;
-  return <span className={`chip ${journey._label.chip}`}>{journey._label.text}</span>;
+
+  return (
+    <span className={`chip ${journey._label.chip}`}>
+      {journey._label.text}
+    </span>
+  );
 }

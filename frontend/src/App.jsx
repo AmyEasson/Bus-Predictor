@@ -133,24 +133,113 @@ function StopAutocomplete({ label, onSelect, onHover, color }) {
 
 function RouteCard({ r }) {
   return (
-    <div className="card">
-      <div className="card-top">
-        <span className={`chip ${r.tone}`}>{r.label}</span>
+    
+<div
+  className={`card journey-card ${isSelected ? 'selected' : ''}`}
+  key={journeyKey}
+  onClick={() => setSelectedJourney(journey)}
+>
+  <div className="journey-card-header">
+    <div className="journey-labels">
+      <JourneyLabel journey={journey} />
+      {isTransfer ? (
+        <span className="chip amber">1 change</span>
+      ) : (
+        <span className="chip green">Direct</span>
+      )}
+    </div>
+
+    <div className="journey-routes">
+      {isTransfer ? (
+        journey.legs.map((leg, index) => (
+          <span className="line-tag" key={leg.trip_id}>
+            {leg.route}
+          </span>
+        ))
+      ) : (
+        <span className="line-tag">{journey.route}</span>
+      )}
+    </div>
+  </div>
+
+  <div className="journey-main">
+    <div className="journey-duration">
+      {journey.duration_minutes}
+      <span> min</span>
+    </div>
+
+    <div className="journey-times">
+      <div>
+        <strong>{journey.departure_time.slice(0, 5)}</strong>
+        <span>Departure</span>
       </div>
-      <div className="big">{r.mins} min</div>
-      <div className="meta">
-        {r.lines.map((l) => (
-          <span key={l} className="line-tag">{l}</span>
-        ))}
-        <span>timetable {r.timetable} min</span>
-        <span style={{ color: TONE[r.tone], fontWeight: 600 }}>
-          +{r.delay} min predicted
-        </span>
-      </div>
-      <div className="bar">
-        <i style={{ width: `${r.risk}%`, background: TONE[r.tone] }} />
+      <span className="journey-arrow">→</span>
+      <div>
+        <strong>{journey.arrival_time.slice(0, 5)}</strong>
+        <span>Arrival</span>
       </div>
     </div>
+  </div>
+
+  {isTransfer && (
+    <div className="journey-transfer">
+      <span className="transfer-icon">↳</span>
+      <div>
+        <strong>{journey.interchange_stop.stop_name}</strong>
+        <span>
+          {journey.transfer_wait_minutes} min connection
+        </span>
+      </div>
+    </div>
+  )}
+
+  <PredictionBadge prediction={journey.prediction} />
+
+  <div className="journey-card-footer">
+    <span>
+      {isTransfer ? 'Two bus services' : 'No changes required'}
+    </span>
+    <span>{isSelected ? 'Selected' : 'View journey'} ↓</span>
+  </div>
+
+  {isTransfer && (
+    <details onClick={(event) => event.stopPropagation()}>
+      <summary>Journey details</summary>
+
+      <div className="journey-stops">
+        {journey.legs.map((leg, index) => (
+          <div key={leg.trip_id}>
+            <strong>
+              Leg {index + 1}: Route {leg.route}
+            </strong>
+            <span>
+              {leg.departure_time.slice(0, 5)}
+              {' → '}
+              {leg.arrival_time.slice(0, 5)}
+            </span>
+            <span>{leg.destination}</span>
+          </div>
+        ))}
+      </div>
+    </details>
+  )}
+
+  {journey.stops && (
+    <details onClick={(event) => event.stopPropagation()}>
+      <summary>View stops ({journey.stops.length})</summary>
+
+      <div className="journey-stops">
+        {journey.stops.map((stop, index) => (
+          <div key={`${stop.stop_id}-${index}`}>
+            {stop.stop_name}
+            <span>{stop.arrival_time?.slice(0, 5)}</span>
+          </div>
+        ))}
+      </div>
+    </details>
+  )}
+</div>
+
   );
 }
 

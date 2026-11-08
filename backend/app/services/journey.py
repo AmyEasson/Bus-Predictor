@@ -343,6 +343,31 @@ def find_transfer_journeys(
         "arr_s": "first_arrival_seconds",
     })
 
+    # Don't offer a transfer if the first bus continues to the destination.
+    destination_on_first_trip = stop_times[
+        stop_times["stop_id"] == destination_stop_id
+    ][["trip_id", "stop_sequence"]].rename(columns={
+        "trip_id": "first_trip_id",
+        "stop_sequence": "destination_sequence_first",
+    })
+
+    first_legs = first_legs.merge(
+        destination_on_first_trip,
+        left_on="trip_id",
+        right_on="first_trip_id",
+        how="left",
+    )
+
+    first_legs = first_legs[
+        first_legs["destination_sequence_first"].isna()
+        | (
+            first_legs["interchange_sequence_first"]
+            > first_legs["destination_sequence_first"]
+        )
+    ].copy()
+
+    first_legs = first_legs.drop(columns=["first_trip_id", "destination_sequence_first"])
+
     first_legs = first_legs.merge(
         active_trips[
             ["trip_id", "route_id", "trip_headsign"]
