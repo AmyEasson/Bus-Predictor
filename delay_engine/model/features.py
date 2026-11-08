@@ -51,44 +51,51 @@ CATEGORICAL = ["route", "direction", "to_stop"]
 # ------------------------------------------------------------------------------------------
 
 def _read_team_arrivals(path, gtfs):
-    """Read the team pipeline's arrivals.py output (stop_arrivals.parquet) and bring it into the
-    column layout the model uses.
-
-    arrivals.py columns -> model columns:
-      line            -> route_short_name
-      sched_arr_utc   -> scheduled_utc
-      actual_arr_utc  -> actual_utc
-      run_id          -> rebuilt as service_date|operator|vehicle|trip  (arrivals.py's run_id is a
-                         row number that restarts every run, so it isn't unique across days/files)
-    Added from the GTFS: direction_id (trips.txt), stop_name (stops.txt), and first/last-stop
-    flags (stop_times.txt). arrivals.py already drops first stops, but the model also needs to
-    know which arrivals are the LAST stop (padded timetables make buses look early there).
-    """
+    """Read arrivals.py output and add the GTFS fields needed by the model."""
     sa = pd.read_parquet(path)
-    sa = sa.rename(columns={"line": "route_short_name", "sched_arr_utc": "scheduled_utc",
-                            "actual_arr_utc": "actual_utc"})
-    sa["run_id"] = (sa.service_date.astype(str) + "|" + sa.operator_ref.fillna("").astype(str)
-                    + "|" + sa.vehicle_ref.astype(str) + "|" + sa.trip_id.astype(str))
+    sa = sa.rename(columns={
+        "line": "route_short_name",
+        "sched_arr_utc": "scheduled_utc",
+        "actual_arr_utc": "actual_utc"
+    })
 
-    trips = pd.read_csv(gtfs + "trips.txt", dtype=str)
-    if "direction_id" in trips:
-        sa = sa.merge(trips[["trip_id", "direction_id"]], on="trip_id", how="left")
-    else:
-        sa["direction_id"] = None
+    sa["run_id"] = (
+        sa.service_date.astype(str) + "|"
+        + sa.operator_ref.fillna("").astype(str) + "|"
+        + sa.vehicle_ref.astype(str) + "|"
+        + sa.trip_id.astype(str)
+    )
 
-    stops = pd.read_csv(gtfs + "stops.txt", dtype={"stop_id": str}, usecols=["stop_id", "stop_name"])
+    # Load trip directions from the GTFS Parquet files
+    trips = pd.read_parquet(
+        os.path.join(gtfs, "trips.parquet"),
+        columns=["trip_id", "direction_id"]
+    )
+    sa = sa.merge(trips, on="trip_id", how="left")
+
+    # Add stop names
+    stops = pd.read_parquet(
+        os.path.join(gtfs, "stops.parquet"),
+        columns=["stop_id", "stop_name"]
+    )
     sa = sa.merge(stops, on="stop_id", how="left")
     sa["stop_name"] = sa.stop_name.fillna(sa.stop_id)
 
-    # First/last stop sequence of each trip, from the timetable (only for the trips we have)
+    # Find first and last stop sequences for each trip
     wanted = set(sa.trip_id)
-    parts = [c[c.trip_id.isin(wanted)] for c in pd.read_csv(
-        gtfs + "stop_times.txt", dtype={"trip_id": str}, usecols=["trip_id", "stop_sequence"],
-        chunksize=1_000_000)]
-    ends = pd.concat(parts).groupby("trip_id").stop_sequence.agg(["min", "max"])
+
+    stop_times = pd.read_parquet(
+        os.path.join(gtfs, "stop_times.parquet"),
+        columns=["trip_id", "stop_sequence"]
+    )
+    stop_times = stop_times[stop_times.trip_id.isin(wanted)]
+
+    ends = stop_times.groupby("trip_id").stop_sequence.agg(["min", "max"])
     sa = sa.merge(ends, left_on="trip_id", right_index=True, how="left")
+
     sa["is_first_stop"] = (sa.stop_sequence == sa["min"]).astype(int)
     sa["is_last_stop"] = (sa.stop_sequence == sa["max"]).astype(int)
+
     return sa.drop(columns=["min", "max"])
 
 

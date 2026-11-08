@@ -223,4 +223,34 @@ Adds timetable-based journey planning to the application, supporting both direct
 ### Changed
 
 - Updated the frontend journey result rendering to accommodate both direct and transfer journey response structures while preserving existing direct journey functionality.
-- Updated the map component to respond dynamically to journey selection rather than remaining at its initial default viewport.
+
+## Historical bus-delay prediction (2026-11-08)
+
+Adds a historical data pipeline and initial machine-learning model for predicting downstream bus delays using Greater Manchester BODS data.
+
+### Added
+
+- **Historical archive processing** (`delay_engine/model/process_archive.py`). Processes archived BODS data into weekly stop-arrival datasets for use in model training.
+- **Archive-to-input conversion** (`delay_engine/trip_matching/archive_to_inputs.py`). Supports converting archived data into the inputs required by the trip-matching pipeline.
+- **Streaming training-pair generation** (`delay_engine/model/build_pairs_streaming.py`). Builds downstream delay prediction examples from historical stop arrivals without loading the entire archive into memory.
+- **Feature engineering** (`delay_engine/model/features.py`). Adds features covering:
+  - Current bus delay, route, direction and destination stop.
+  - Number of stops ahead and scheduled travel time.
+  - Recent route delays, additional corridor delays and headway conditions.
+  - Time of day, weekday/weekend and peak periods.
+  - Weather, school terms, bank holidays and nearby events.
+- **LightGBM quantile regression** (`delay_engine/model/train.py`). Trains P10, P50 and P90 models to estimate optimistic, typical and pessimistic downstream delays.
+- **Prediction interface** (`delay_engine/model/predict.py`). Provides functionality for loading and using the trained models.
+- **Exploration and evaluation** (`delay_engine/model/explore.py`). Supports analysis of the generated historical training data.
+
+### Evaluation
+
+- Generated approximately **2 million downstream prediction examples** from 227 days of historical BODS data.
+- Implemented a chronological 80/20 train/test split, ensuring training targets were observed before the test period and excluding runs shared between training and testing.
+- Compared model performance against timetable, current-delay and historical-median baselines.
+- Initial P50 mean absolute error: **81.2 seconds**, approximately **17% better than the strongest baseline**.
+- Added feature ablation, quantile calibration and feature-importance evaluation.
+
+### Notes
+
+- Raw BODS archives, generated Parquet datasets and locally trained model artefacts are not included in the source-code commit.
