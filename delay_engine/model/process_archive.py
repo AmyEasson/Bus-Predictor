@@ -1,4 +1,3 @@
-
 #!/usr/bin/env python3
 
 """
@@ -6,13 +5,13 @@ Process the full BODS historical archive in weekly batches.
 
 Pipeline:
 1. Discover daily archive files.
-2. Process them in seven-day windows.
+2. Process them in seven-day windows (every Greater Manchester bus route by default).
 3. Reuse previously completed batches.
-4. Extract stop arrivals.
+4. Extract stop arrivals (weeks where nothing matches the timetable are skipped, not crashed).
 5. Record batch and route coverage.
-6. Combine all weekly arrivals.
-7. Build training pairs.
-8. Optionally train a separate archive model.
+6. Build training pairs straight from the weekly files (one week in memory at a time - the
+   whole network is far too big to combine into one table in memory).
+7. Optionally train a separate archive model.
 
 Run from the project root:
 
@@ -41,7 +40,10 @@ ROOT = Path(__file__).resolve().parents[2]
 
 ARCHIVE = ROOT / "bods_archive"
 GTFS = ROOT / "data"
+# Context (weather/calendar/events): the archival_data folder if it exists, otherwise context/
 CONTEXT = ROOT / "delay_engine" / "archival_data" / "data"
+if not (CONTEXT / "context_hourly.parquet").exists() and (ROOT / "context").exists():
+    CONTEXT = ROOT / "context"
 
 ARCHIVE_SCRIPT = ROOT / "delay_engine" / "trip_matching" / "archive_to_inputs.py"
 ARRIVALS_SCRIPT = ROOT / "delay_engine" / "trip_matching" / "arrivals.py"
@@ -50,7 +52,6 @@ TRAIN_SCRIPT = ROOT / "delay_engine" / "model" / "train.py"
 
 WORK = Path("/tmp/bods_batches_working_copy")
 
-COMBINED_ARRIVALS = Path("/tmp/archive_stop_arrivals.parquet")
 COMBINED_PAIRS = Path("/tmp/archive_pairs.parquet")
 
 MODEL_OUTPUT = ROOT / "delay_engine" / "model" / "models_archive"
@@ -63,17 +64,11 @@ ROUTE_REPORT = WORK / "archive_route_coverage.csv"
 # Configuration
 # ---------------------------------------------------------------------
 
-LINES = (
-    "1,10,100,101,103,11,111,112,114,118,119,135,142,143,147,"
-    "15,150,156,163,17,172,18,182,192,197,199,2,201,202,203,"
-    "205,21,216,219,22,23,230,231,245,247,249,25,250,255,256,"
-    "263,30,313,314,325,33,330,346,347,348,35,36,368,37,370,"
-    "382,383,384,388,389,409,41,42,425,42A,42B,43,50,52,53,"
-    "541,56,59,66,67,7,76,8,81,82,83,84,85,85A,86,93,95,97,"
-    "98,V1,V2,X43"
-)
+# "all" = every bus route in Greater Manchester (archive_to_inputs.py filters out other towns'
+# routes that share a number, e.g. Warrington's 43). Or a comma-separated list of route numbers.
+LINES = "all"
 
-DEFAULT_MAX_PAIRS = 2_000_000
+DEFAULT_MAX_PAIRS = 3_000_000
 
 
 # ---------------------------------------------------------------------
@@ -110,6 +105,17 @@ def discover_archive():
     return sorted(files)
 
 
+BATCH_DAYS = 7     # set from --days-per-batch in main()
+
+
+def batch_folder_name(start):
+    """week_YYYYMMDD for 7-day batches (the original names), batch_YYYYMMDD_Nd otherwise, so
+    batches of different lengths never get mixed up when outputs are reused."""
+    if BATCH_DAYS == 7:
+        return f"week_{start.strftime('%Y%m%d')}"
+    return f"batch_{start.strftime('%Y%m%d')}_{BATCH_DAYS}d"
+
+
 def create_weekly_windows(files):
     """
     Create seven-day windows, starting from the first archive date.
@@ -129,7 +135,7 @@ def create_weekly_windows(files):
     week_start = first_date
 
     while week_start <= last_date:
-        week_end = week_start + timedelta(days=6)
+        week_end = week_start + timedelta(days=BATCH_DAYS - 1)
 
         dates_in_window = [
             date for date in dates
@@ -139,7 +145,7 @@ def create_weekly_windows(files):
         if dates_in_window:
             windows.append((week_start, week_end, dates_in_window))
 
-        week_start += timedelta(days=7)
+        week_start += timedelta(days=BATCH_DAYS)
 
     return windows
 
@@ -149,7 +155,7 @@ def create_weekly_windows(files):
 # ---------------------------------------------------------------------
 
 def process_batch(index, total, week_start, week_end, dates_in_window):
-    batch_name = f"week_{week_start.strftime('%Y%m%d')}"
+    batch_name = batch_folder_name(week_start)
     out_dir = WORK / batch_name
 
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -163,10 +169,22 @@ def process_batch(index, total, week_start, week_end, dates_in_window):
     print(f"Archive days available: {len(dates_in_window)}")
     print("=" * 70, flush=True)
 
-    # Reuse existing converter outputs if both are present.
-    if snapshot.exists() and matched.exists():
+    # Reuse outputs only if the all-routes archive_to_inputs.py FINISHED for this batch: it writes
+    # CONVERTER_DONE as its very last step. Folders from older route-list runs, or from a run that
+    # was killed part-way, don't have it and are rebuilt from scratch.
+    done = out_dir / "CONVERTER_DONE"
+    arrivals_done = out_dir / "ARRIVALS_DONE"
+    if done.exists() and matched.exists() and arrivals.exists() and arrivals_done.exists():
+        print("Reusing existing matched runs and stop arrivals.")
+    elif done.exists() and snapshot.exists() and matched.exists():
         print("Reusing existing snapshot and matched runs.")
+        for f in (arrivals, arrivals_done):
+            if f.exists():
+                f.unlink()
     else:
+        for f in (arrivals, arrivals_done, snapshot, matched):
+            if f.exists():
+                f.unlink()             # stale or partial - must be regenerated
         run([
             sys.executable,
             str(ARCHIVE_SCRIPT),
@@ -178,8 +196,17 @@ def process_batch(index, total, week_start, week_end, dates_in_window):
             "--to", week_end.strftime("%Y%m%d"),
         ])
 
+    # Weeks where nothing matched the timetable: skip arrivals.py (it can't handle 0 runs)
+    if pq.read_metadata(matched).num_rows == 0:
+        print("No runs matched the timetable this week - skipping.")
+        return {
+            "batch": batch_name, "from": str(week_start), "to": str(week_end),
+            "archive_days": len(dates_in_window), "arrival_rows": 0, "unique_runs": 0,
+            "routes": 0, "status": "no_timetable_match",
+        }, []
+
     # Generate stop arrivals if they do not already exist.
-    if arrivals.exists():
+    if arrivals.exists() and arrivals_done.exists():
         print("Reusing existing stop arrivals.")
     else:
         run([
@@ -189,9 +216,14 @@ def process_batch(index, total, week_start, week_end, dates_in_window):
             "--gtfs-dir", str(GTFS),
             "--out-dir", str(out_dir),
         ])
+        if not arrivals.exists():
+            raise RuntimeError(f"Missing arrivals output: {arrivals}")
+        arrivals_done.write_text("ok\n")   # only after arrivals.py finished successfully
 
-    if not arrivals.exists():
-        raise RuntimeError(f"Missing arrivals output: {arrivals}")
+    # The week's positions snapshot is ~1 GB for the whole network and isn't needed once the
+    # arrivals exist - delete it so /tmp doesn't fill up.
+    if snapshot.exists():
+        snapshot.unlink()
 
     df = pd.read_parquet(arrivals)
 
@@ -271,65 +303,27 @@ def process_batch(index, total, week_start, week_end, dates_in_window):
 
 
 # ---------------------------------------------------------------------
-# Combine weekly arrivals
+# Weekly arrivals files (not combined: build_pairs.py reads them one at a time)
 # ---------------------------------------------------------------------
 
-def combine_arrivals(windows):
-    print("\n" + "=" * 70)
-    print("COMBINING WEEKLY ARRIVALS")
-    print("=" * 70)
-
-    arrival_files = []
-
+def weekly_arrival_files(windows):
+    files = []
     for week_start, _, _ in windows:
-        path = (
-            WORK
-            / f"week_{week_start.strftime('%Y%m%d')}"
-            / "stop_arrivals.parquet"
-        )
-
+        path = WORK / batch_folder_name(week_start) / "stop_arrivals.parquet"
         if path.exists() and pq.read_metadata(path).num_rows > 0:
-            arrival_files.append(path)
-
-    if not arrival_files:
+            files.append(path)
+    if not files:
         raise RuntimeError("No non-empty stop_arrivals.parquet files found.")
-
-    schema = pq.read_schema(arrival_files[0])
-
-    if COMBINED_ARRIVALS.exists():
-        COMBINED_ARRIVALS.unlink()
-
-    total_rows = 0
-
-    with pq.ParquetWriter(COMBINED_ARRIVALS, schema) as writer:
-        for index, path in enumerate(arrival_files, 1):
-            print(f"[{index}/{len(arrival_files)}] Adding {path.parent.name}")
-
-            current_schema = pq.read_schema(path)
-
-            if not current_schema.equals(schema, check_metadata=False):
-                raise RuntimeError(
-                    f"Parquet schema differs in {path}. "
-                    "Stopping rather than combining incompatible data."
-                )
-
-            table = pq.read_table(path)
-            writer.write_table(table)
-
-            total_rows += table.num_rows
-            del table
-
-    print(f"\nCombined arrival rows: {total_rows:,}")
-    print(f"Saved to: {COMBINED_ARRIVALS}")
-
-    return total_rows
+    rows = sum(pq.read_metadata(p).num_rows for p in files)
+    print(f"\n{len(files)} weekly arrivals files, {rows:,} stop arrivals in total")
+    return files
 
 
 # ---------------------------------------------------------------------
 # Build training pairs
 # ---------------------------------------------------------------------
 
-def build_training_pairs(max_pairs):
+def build_training_pairs(max_pairs, arrival_files):
     print("\n" + "=" * 70)
     print("BUILDING TRAINING PAIRS")
     print("=" * 70)
@@ -340,7 +334,7 @@ def build_training_pairs(max_pairs):
     run([
         sys.executable,
         str(PAIRS_SCRIPT),
-        "--arrivals", str(COMBINED_ARRIVALS),
+        "--arrivals", *[str(p) for p in arrival_files],
         "--gtfs", str(GTFS) + "/",
         "--context", str(CONTEXT),
         "--out", str(COMBINED_PAIRS),
@@ -395,6 +389,22 @@ def main():
     )
 
     parser.add_argument(
+        "--from", dest="date_from", default="20260830",
+        help="first archive date to use, YYYYMMDD (default 20260830: the timetable in data/ "
+             "doesn't match earlier dates; use 00000000 for everything)",
+    )
+
+    parser.add_argument(
+        "--to", dest="date_to", default="99999999",
+        help="last archive date to use, YYYYMMDD",
+    )
+
+    parser.add_argument(
+        "--days-per-batch", type=int, default=7,
+        help="days of archive per batch (default 7). Use 2-3 if a batch runs out of memory.",
+    )
+
+    parser.add_argument(
         "--skip-training",
         action="store_true",
         help="Build combined data and training pairs without training.",
@@ -404,6 +414,9 @@ def main():
 
     if args.max_pairs < 1:
         parser.error("--max-pairs must be greater than zero.")
+
+    global BATCH_DAYS
+    BATCH_DAYS = args.days_per_batch
 
     # Check required paths and scripts.
     if not ARCHIVE.exists():
@@ -423,7 +436,10 @@ def main():
 
     WORK.mkdir(parents=True, exist_ok=True)
 
-    files = discover_archive()
+    files = [
+        (d, p) for d, p in discover_archive()
+        if args.date_from <= d.strftime("%Y%m%d") <= args.date_to
+    ]
 
     if not files:
         raise SystemExit(f"No daily Parquet files found in {ARCHIVE}")
@@ -435,7 +451,7 @@ def main():
     print(f"Archive files:  {len(files)}")
     print(f"First date:     {files[0][0]}")
     print(f"Last date:      {files[-1][0]}")
-    print(f"Weekly batches: {len(windows)}")
+    print(f"Batches:        {len(windows)} x {BATCH_DAYS} days")
     print(f"Working folder: {WORK}")
     print(f"Pair limit:     {args.max_pairs:,}")
 
@@ -463,14 +479,11 @@ def main():
     print(f"Batch report: {REPORT}")
     print(f"Route report: {ROUTE_REPORT}")
 
-    # Combine weekly arrivals.
-    total_arrivals = combine_arrivals(windows)
+    # Weekly arrivals files (skipping empty weeks).
+    arrival_files = weekly_arrival_files(windows)
 
-    if total_arrivals == 0:
-        raise RuntimeError("Combined arrivals file is empty.")
-
-    # Build training pairs.
-    build_training_pairs(args.max_pairs)
+    # Build training pairs, one week in memory at a time.
+    build_training_pairs(args.max_pairs, arrival_files)
 
     # Train only after all processing succeeds.
     if not args.skip_training:
@@ -481,13 +494,16 @@ def main():
     print("\n" + "=" * 70)
     print("ARCHIVE PIPELINE COMPLETED")
     print("=" * 70)
-    print(f"Combined arrivals: {COMBINED_ARRIVALS}")
+    print(f"Weekly arrivals:   {WORK}/week_*/stop_arrivals.parquet")
     print(f"Training pairs:    {COMBINED_PAIRS}")
     print(f"Batch report:      {REPORT}")
     print(f"Route report:      {ROUTE_REPORT}")
 
     if not args.skip_training:
         print(f"New model:         {MODEL_OUTPUT}")
+    print("\nCharts + headline numbers:")
+    print(f'  python3 delay_engine/model/explore.py --arrivals "{WORK}/week_*/stop_arrivals.parquet" '
+          f'--gtfs data/ --models {MODEL_OUTPUT}')
 
 
 if __name__ == "__main__":

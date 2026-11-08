@@ -6,8 +6,14 @@ Reads stop_arrivals (from the team's arrivals.py) and, if they exist, the traine
 Writes PNG charts to delay_engine/model/figures/ and prints the key numbers.
 
 Usage (from the project root):
-    python3 delay_engine/model/explore.py
     python3 delay_engine/model/explore.py --arrivals delay_engine/trip_matching/out/stop_arrivals.parquet
+    # whole-network archive (one file per week; quote the glob):
+    python3 delay_engine/model/explore.py \
+        --arrivals "/tmp/bods_batches_working_copy/week_*/stop_arrivals.parquet" --gtfs data/
+
+Large inputs: each file is loaded on its own (headways and delay-added are computed on the full
+file), then a random sample of whole JOURNEYS is kept so the combined table stays under
+--max-arrivals rows. Totals are reported for the full data; percentages come from the sample.
 
 Charts
   01_coverage.png          stop arrivals per hour (how much data we have, and any gaps)
@@ -20,6 +26,7 @@ Charts
   08_drivers.png             (after train.py) what drives the model's predictions
 """
 import argparse
+import glob
 import json
 import os
 import sys
@@ -62,27 +69,63 @@ def route_colors(routes):
     return {r: SERIES[i % len(SERIES)] for i, r in enumerate(sorted(routes, key=str))}
 
 
+def load_sampled(items, gtfs, max_arrivals, seed=0):
+    """Load each arrivals file in turn and keep a random sample of whole journeys."""
+    import pyarrow.parquet as pq
+    paths = []
+    for item in items:
+        paths.extend(sorted(glob.glob(item)) or [item])
+    paths = [p for p in paths if os.path.exists(p) and pq.read_metadata(p).num_rows > 0]
+    if not paths:
+        raise SystemExit(f"no non-empty arrivals files for {items}")
+    total_rows = sum(pq.read_metadata(p).num_rows for p in paths)
+    frac = min(1.0, max_arrivals / total_rows)
+    rng = np.random.default_rng(seed)
+    parts, journeys = [], 0
+    for p in paths:
+        sa = F.load_stop_arrivals(p, gtfs)
+        runs = sa.run_id.unique()
+        journeys += len(runs)
+        if frac < 1:
+            keep = runs[rng.random(len(runs)) < frac]
+            sa = sa[sa.run_id.isin(set(keep))]
+        parts.append(sa)
+    sa = pd.concat(parts, ignore_index=True)
+    if frac < 1:
+        print(f"sampled {frac:.1%} of journeys from {len(paths)} files "
+              f"({len(sa):,} of {total_rows:,} stop arrivals)")
+    return sa, {"arrivals": total_rows, "journeys": journeys, "files": len(paths)}
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--arrivals", default="delay_engine/trip_matching/out/stop_arrivals.parquet",
-                    help="arrivals.py output (.parquet), or compute_delays.py output (.sqlite)")
-    ap.add_argument("--gtfs", default="gtfs/", help="GTFS folder (for direction, stop names, last stops)")
+    ap.add_argument("--arrivals", nargs="+",
+                    default=["delay_engine/trip_matching/out/stop_arrivals.parquet"],
+                    help="one or more arrivals.py outputs (.parquet) or glob patterns")
+    ap.add_argument("--gtfs", default="data/", help="folder with the GTFS .parquet tables")
+    ap.add_argument("--max-arrivals", type=int, default=3_000_000,
+                    help="sample whole journeys down to about this many stop arrivals")
+    ap.add_argument("--min-journeys", type=int, default=200,
+                    help="routes with fewer sampled journeys are left out of route rankings")
     ap.add_argument("--models", default="delay_engine/model/models/")
     ap.add_argument("--figures", default="delay_engine/model/figures/")
     a = ap.parse_args()
     os.makedirs(a.figures, exist_ok=True)
 
-    sa = F.load_stop_arrivals(a.arrivals, a.gtfs)
+    sa, totals = load_sampled(a.arrivals, a.gtfs, a.max_arrivals)
     sa["local"] = sa.actual_utc.dt.tz_convert(F.TZ)
     sa["hour"] = sa.local.dt.hour
     mid = sa[(sa.is_first_stop == 0) & (sa.is_last_stop == 0)].copy()   # exclude termini
     mid["delay_min"] = mid.delay_s / 60
-    colors = route_colors(sa.route_short_name.unique())
+    routes = sa.route_short_name.unique()
+    many_routes = len(routes) > 8          # whole network: summarise instead of one line per route
+    colors = route_colors(routes) if not many_routes else {r: ACCENT for r in routes}
 
     # ---- headline numbers ------------------------------------------------------------------
     print("\n=== Headline numbers (excluding first/last stops) ===")
     print(f"period: {sa.local.min():%a %H:%M} -> {sa.local.max():%a %H:%M}  "
-          f"| {sa.run_id.nunique():,} journeys | {len(mid):,} stop arrivals")
+          f"| {totals['journeys']:,} journeys | {totals['arrivals']:,} stop arrivals | "
+          f"{len(routes):,} routes")
     print(f"median delay {mid.delay_min.median():.1f} min | "
           f"90th percentile {mid.delay_min.quantile(.9):.1f} min | "
           f"5+ min late: {(mid.delay_s >= 300).mean():.0%} | "
@@ -91,7 +134,16 @@ def main():
         journeys=("run_id", "nunique"), median_min=("delay_min", "median"),
         p90_min=("delay_min", lambda s: s.quantile(.9)),
         late5=("delay_s", lambda s: (s >= 300).mean())).round(2)
-    print("\nBy route:\n" + by_route.to_string())
+    if many_routes:
+        ranked = by_route[by_route.journeys >= a.min_journeys].sort_values("late5")
+        print(f"\nMost reliable routes (share of arrivals 5+ min late; >= {a.min_journeys} "
+              f"journeys in sample):\n" + ranked.head(10).to_string())
+        print("\nLeast reliable routes:\n" + ranked.tail(10).iloc[::-1].to_string())
+        by_route.sort_values("late5", ascending=False).to_csv(
+            os.path.join(a.figures, "routes_reliability.csv"))
+        print(f"(all routes: {os.path.join(a.figures, 'routes_reliability.csv')})")
+    else:
+        print("\nBy route:\n" + by_route.to_string())
 
     # ---- 01 coverage -------------------------------------------------------------------
     per_hour = sa.set_index("local").resample("h").size()
@@ -109,26 +161,40 @@ def main():
     save(fig, a.figures, "01_coverage.png")
 
     # ---- 02 delay by hour, per route --------------------------------------------------------
-    hr = mid.groupby(["route_short_name", "hour"]).delay_min.median().unstack(0)
     fig, ax = plt.subplots(figsize=(9, 4))
-    for r in sorted(hr.columns, key=str):
-        s = hr[r].dropna()
-        ax.plot(s.index, s.values, color=colors[r], marker="o", markersize=4, label=f"Route {r}")
+    if many_routes:
+        # Whole network: typical and bad-case delay by hour, all routes together
+        g = mid.groupby("hour").delay_min
+        for (label, s), col in zip([("median", g.median()), ("worst 10% (90th percentile)",
+                                                              g.quantile(.9))], SERIES):
+            ax.plot(s.index, s.values, color=col, marker="o", markersize=4, label=label)
+        ax.set_title("Delay by hour of day, all routes")
+        ax.legend(loc="upper left")
+    else:
+        hr = mid.groupby(["route_short_name", "hour"]).delay_min.median().unstack(0)
+        for r in sorted(hr.columns, key=str):
+            s = hr[r].dropna()
+            ax.plot(s.index, s.values, color=colors[r], marker="o", markersize=4,
+                    label=f"Route {r}")
+        ax.set_title("Median delay by hour of day")
+        ax.legend(ncol=min(5, len(hr.columns)), loc="upper left")
     ax.axhline(0, color=INK2, linewidth=1)
-    ax.set_title("Median delay by hour of day")
     ax.set_xlabel("hour (UK time)")
     ax.set_ylabel("minutes late")
-    ax.legend(ncol=min(5, len(hr.columns)), loc="upper left")
     save(fig, a.figures, "02_delay_by_hour.png")
 
     # ---- 03 route reliability --------------------------------------------------------------
     rel = (mid.groupby("route_short_name").delay_s.apply(lambda s: (s >= 300).mean())
               .sort_values())
+    if many_routes:   # the 15 least reliable routes with enough data
+        enough = by_route.index[by_route.journeys >= a.min_journeys]
+        rel = rel[rel.index.isin(enough)].tail(15)
     fig, ax = plt.subplots(figsize=(7, 0.5 * len(rel) + 1.2))
     ax.barh([f"Route {r}" for r in rel.index], rel.values * 100, color=ACCENT, height=0.6)
     for y, v in enumerate(rel.values):
         ax.text(v * 100 + 0.5, y, f"{v:.0%}", va="center", color=INK2)
-    ax.set_title("Share of stop arrivals 5+ minutes late")
+    ax.set_title("Share of stop arrivals 5+ minutes late"
+                 + (" - 15 least reliable routes" if many_routes else ""))
     ax.set_xlabel("% of stop arrivals")
     ax.grid(axis="y", visible=False)
     save(fig, a.figures, "03_route_reliability.png")

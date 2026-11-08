@@ -15,7 +15,8 @@ predict.py - use the trained delay model. This is what the routing engine import
     r["arrival_p50"], r["arrival_p90"]  # typical and "be safe" arrival times
 
 Optional extra context (better predictions if you have it):
-    recent_arrivals=<stop_arrivals DataFrame from features.load_stop_arrivals>  -> live features
+    model.use_recent_arrivals(<stop_arrivals DataFrame from features.load_stop_arrivals>)
+                                    -> live "last 30 min" features for every later prediction
     gap_ahead_s / headway_ratio                                                  -> bunching
 Weather, calendar and events are read from context/ (context_hourly.parquet, events.csv)
 automatically if the files exist. For live use the hourly file must cover the current hour.
@@ -44,6 +45,12 @@ class DelayModel:
             model_dir, f"delay_q{int(q * 100):02d}.txt")) for q in self.meta["quantiles"]}
         self.context = F.load_context_hourly(os.path.join(context_dir, "context_hourly.parquet"))
         self.events = F.load_events(os.path.join(context_dir, "events.csv"))
+        self._live = None
+
+    def use_recent_arrivals(self, sa):
+        """Give the model recent live stop arrivals (features.load_stop_arrivals output) ONCE;
+        the "last 30 minutes" tables are computed here and reused by every prediction."""
+        self._live = F.live_tables(sa)
 
     def _prepare(self, df):
         """Same categories as training; unseen values (e.g. a new stop) become missing."""
@@ -78,6 +85,8 @@ class DelayModel:
         row = F.add_time_features(row, "now_utc")
         if recent_arrivals is not None:
             row = F.add_live_features(row, recent_arrivals, "now_utc")
+        elif self._live is not None:
+            row = F.add_live_features(row, ts_col="now_utc", tables=self._live)
         row = F.add_hourly_context(row, self.context, "now_utc")
         row = F.add_events(row, self.events, "now_utc")
 
