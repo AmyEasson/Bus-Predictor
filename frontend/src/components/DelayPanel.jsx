@@ -5,16 +5,32 @@ const TABS = [['overall', 'Overall'], ['weather', 'Weather'], ['time_of_day', 'T
 const tone = (m) => (m < 2 ? 'g' : m < 5 ? 'a' : 'r');
 const hh = (h) => String(h).padStart(2, '0');
 
-export function DelayPanel({ data, error, colourBy, setColourBy, factors, toggleFactor, hour, setHour }) {
+const DAY_TYPES = [['weekday', 'Weekdays'], ['weekend', 'Weekends']];
+
+export function DelayPanel({ data, error, colourBy, setColourBy, factors, toggleFactor, hour, setHour, dayType, setDayType }) {
   const max = data ? Math.max(1, ...data.hourly.map((h) => h.avg_delay_minutes)) : 1;
   return (
     <>
       <div>
         <h1>What's slowing buses?</h1>
-        <p className="sub">Colour shows how far buses run behind timetable on each stretch of road.</p>
+        <p className="sub">Each hexagon shows how far behind timetable buses typically are in that area. Hover for details.</p>
       </div>
-      <div className="note warn"><div><strong>Sample data</strong>Numbers come from the mock API, not real predictions.</div></div>
+      {data?.data_from && (
+        <div className="note">
+          <div>
+            <strong>Typical {data.day_type} pattern, not live</strong>
+            From {data.data_days} days of real bus journeys ({data.data_from} to {data.data_to}).
+          </div>
+        </div>
+      )}
       {error && <div className="note warn"><div><strong>Couldn't load the delay map</strong>{error}</div></div>}
+
+      <div className="section">Day</div>
+      <div className="seg">
+        {DAY_TYPES.map(([id, name]) => (
+          <button key={id} className={`seg-btn ${dayType === id ? 'on' : ''}`} onClick={() => setDayType(id)}>{name}</button>
+        ))}
+      </div>
 
       <div className="section">Colour by</div>
       <div className="seg">

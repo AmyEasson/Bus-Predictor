@@ -13,7 +13,6 @@ const hoveredStopIcon = L.divIcon({
 });
 
 export function BusMap({
-  buses = [],
   hoveredStop = null,
   selectedJourney = null,
   children
@@ -29,27 +28,16 @@ export function BusMap({
       center={[53.4808, -2.2426]} 
       zoom={13} 
       style={{ width: '100%', height: '100%' }}
+      preferCanvas  // draw lines on one canvas instead of 1,500 SVG elements: much smoother pan/zoom
     >
+      {/* Stadia "Alidade Smooth": pale, low-contrast basemap so the coloured delay lines stand out.
+          No API key needed on localhost. To deploy on a real domain, create a free Stadia Maps account
+          and add the domain there (no key goes in the code). */}
       <TileLayer
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-        attribution='&copy; OpenStreetMap contributors'
+        url="https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}{r}.png"
+        maxZoom={20}
+        attribution='&copy; <a href="https://stadiamaps.com/">Stadia Maps</a> &copy; <a href="https://openmaptiles.org/">OpenMapTiles</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
       />
-
-      {/* Render live buses safely */}
-      {!selectedJourney && buses.map((bus) => {
-        if (bus.latitude == null || bus.longitude == null) return null;
-        return (
-          <Marker 
-            key={`${bus.operator_ref}-${bus.vehicle_ref}`} 
-            position={[bus.latitude, bus.longitude]}
-          >
-            <Popup>
-              <b>Line {bus.published_line_name}</b><br />
-              Destination: {bus.destination_name || 'Unknown'}
-            </Popup>
-          </Marker>
-        );
-      })}
 
       {/* Render preview marker safely */}
       {hasValidHoverStop && (

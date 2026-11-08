@@ -1,11 +1,11 @@
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import './App.css';
 import { Header } from './components/Header';
 import 'leaflet/dist/leaflet.css';
 import { BusMap } from './components/BusMap';
-import { fetchAllLiveBuses, searchStops, fetchJourneys } from './services/api';
-import { fetchDelayMap } from './services/delayApi';
+import { searchStops, fetchJourneys } from './services/api';
+import { fetchDelayMap, fetchNetworkSummary } from './services/delayApi';
 import { DelayPanel, DelayLegend } from './components/DelayPanel';
 import { DelayLayer } from './components/DelayLayer';
 
@@ -24,6 +24,17 @@ const TONE = {
 };
 
 const TIME_MODES = ['Depart after', 'Arrive by'];
+
+// Hexagon width (m) for a zoom level: big cells for the whole city, fine ones on the street.
+// Must be one of the backend's HEX_SIZES.
+function hexSizeFor(zoom) {
+  if (zoom <= 10) return 2000;
+  if (zoom <= 11) return 1200;
+  if (zoom <= 12) return 700;
+  if (zoom <= 13) return 400;
+  if (zoom <= 14) return 250;
+  return 150;
+}
 
 function getJourneyKey(journey) {
   if (journey.journey_type === 'transfer') {
@@ -181,13 +192,19 @@ export default function App() {
     return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
   });
 
-  const [rows, setRows] = useState([]);
-  const [firstLoad, setFirstLoad] = useState(true);
   const [searched, setSearched] = useState(false);
 
   const [colourBy, setColourBy] = useState('overall');
   const [factors, setFactors] = useState(['weather', 'time_of_day', 'events']);
-  const [hour, setHour] = useState(Math.min(18, Math.max(7, new Date().getHours())));
+  // the delay map's hour chart covers 06:00-23:00
+  const [hour, setHour] = useState(() => Math.max(6, new Date().getHours()));
+  const [dayType, setDayType] = useState(() => ([0, 6].includes(new Date().getDay()) ? 'weekend' : 'weekday'));
+  // map zoom + visible area, reported by the delay layer; picks the hexagon size
+  const [mapView, setMapView] = useState({ zoom: 13, bbox: null });
+  const hexM = hexSizeFor(mapView.zoom);
+  // zoomed in, only fetch the hexagons on screen (the whole region at 150 m is ~2 MB)
+  const bbox = mapView.zoom >= 14 ? mapView.bbox : null;
+  const [summary, setSummary] = useState(null);
   const [delay, setDelay] = useState(null);
   const [delayErr, setDelayErr] = useState(null);
 
@@ -196,20 +213,16 @@ export default function App() {
   const [journeyError, setJourneyError] = useState(null);
   const [selectedJourney, setSelectedJourney] = useState(null);
 
-  // Load live bus positions.
+  // Typical network performance for the current hour (refreshes when the hour changes).
   useEffect(() => {
-    const load = async () => {
-      try {
-        setRows(await fetchAllLiveBuses());
-      } finally {
-        setFirstLoad(false);
-      }
-    };
-
+    let stale = false;
+    const load = () =>
+      fetchNetworkSummary({ hour: new Date().getHours() })
+        .then((s) => { if (!stale) setSummary(s); })
+        .catch(() => { if (!stale) setSummary(null); });
     load();
-
-    const t = setInterval(load, 15000);
-    return () => clearInterval(t);
+    const t = setInterval(load, 10 * 60 * 1000);
+    return () => { stale = true; clearInterval(t); };
   }, []);
 
   // Load delay map data.
@@ -218,7 +231,7 @@ export default function App() {
 
     let stale = false;
 
-    fetchDelayMap({ hour, colourBy, factors })
+    fetchDelayMap({ hour, colourBy, factors, dayType, hexM, bbox })
       .then((d) => {
         if (!stale) {
           setDelay(d);
@@ -232,7 +245,7 @@ export default function App() {
     return () => {
       stale = true;
     };
-  }, [tab, hour, colourBy, factors]);
+  }, [tab, hour, colourBy, factors, dayType, hexM, bbox]);
 
   const toggleFactor = (k) => {
     setFactors((f) =>
@@ -274,36 +287,6 @@ export default function App() {
     }
   };
 
-  // One marker per vehicle (newest fix).
-  const { buses, asOf } = useMemo(() => {
-    const latest = new Map();
-
-    for (const b of rows) {
-      if (b.latitude == null || b.longitude == null) continue;
-
-      const k = `${b.operator_ref}|${b.vehicle_ref}`;
-
-      if (
-        !latest.has(k) ||
-        b.recorded_at > latest.get(k).recorded_at
-      ) {
-        latest.set(k, b);
-      }
-    }
-
-    const list = [...latest.values()];
-
-    const newest = list.reduce(
-      (m, b) => Math.max(m, Date.parse(b.recorded_at) || 0),
-      0
-    );
-
-    return {
-      buses: list,
-      asOf: newest ? new Date(newest) : null
-    };
-  }, [rows]);
-
   return (
     <div className="app">
       <Header
@@ -315,7 +298,6 @@ export default function App() {
             setSelectedJourney(null);
           }
         }}
-        asOf={asOf}
       />
 
       <div className="main">
@@ -330,6 +312,8 @@ export default function App() {
               toggleFactor={toggleFactor}
               hour={hour}
               setHour={setHour}
+              dayType={dayType}
+              setDayType={setDayType}
             />
           ) : searched ? (
             <>
@@ -579,19 +563,21 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="section">Network right now</div>
+              <div className="section">
+                Typical at this hour{summary ? ` (${summary.day_type}s)` : ''}
+              </div>
 
               <div className="stats">
                 <div className="stat">
-                  <b>–</b>
+                  <b>{summary ? `${summary.pct_on_time}%` : '–'}</b>
                   <span>buses on time</span>
                 </div>
                 <div className="stat">
-                  <b>–</b>
+                  <b>{summary ? summary.delayed_over_5min.toLocaleString() : '–'}</b>
                   <span>delayed &gt; 5 min</span>
                 </div>
                 <div className="stat">
-                  <b>–</b>
+                  <b>{summary ? `${summary.avg_delay_minutes} min` : '–'}</b>
                   <span>avg delay</span>
                 </div>
               </div>
@@ -600,20 +586,11 @@ export default function App() {
         </aside>
 
         <div className="mapwrap">
-          {firstLoad && (
-            <div className="toast">Loading bus positions…</div>
-          )}
-
-          {tab === 'plan' && !firstLoad && buses.length === 0 && (
-            <div className="toast err">No bus data found</div>
-          )}
-
           <BusMap
-            buses={tab === 'plan' ? buses : []}
             hoveredStop={hoveredStop}
             selectedJourney={selectedJourney}
           >
-            {tab === 'delay-map' && <DelayLayer data={delay} />}
+            {tab === 'delay-map' && <DelayLayer data={delay} onViewChange={setMapView} />}
           </BusMap>
 
           {tab === 'delay-map' && <DelayLegend data={delay} />}

@@ -1,5 +1,52 @@
 # Changelog
 
+## Map visuals (2026-11-08)
+
+- **Hexagons change size with zoom.** They range from 2 km across when zoomed out over the region to 150 m at street level (`hexSizeFor` in `App.jsx`; the allowed sizes are `HEX_SIZES` in `services/delay.py`). At zoom 14 and above, only the visible area is fetched. Each request takes under 0.2 s. They also have a lighter fill (30%) and an outline in their own colour, so the streets stay readable.
+- **Weekday/weekend switch** on the delay panel. It defaults to today's day type. Without it, the map always showed today's pattern, and on a Sunday the afternoon shopping peak (13:00–14:00) looked like a missing rush hour.
+- **Event pins.** They only appear from 2 h before an event to 2 h after it ends, the same window used to measure event effects, and only on today's day type. The event calendar (`events.csv`) ends on 9 Nov 2026.
+- **Hexagons instead of stop-to-stop lines on the delay map.** The lines ran straight between stops (through buildings), because the timetable we have includes no road shapes. They also left gaps wherever our filters dropped a stretch. The map now draws hexagons 400 m across (`HEX_M` in `services/delay.py`). Each one is coloured by the bus-pass-weighted average delay over the stretches ending inside it, and is shown if it has at least 30 passes at that hour. Hovering shows the delay, the worst stretch inside the hexagon, the lines and the number of passes. All bands now share one style: 60% fill and a thin white outline.
+- **API.** `/api/delay-map` returns `hexes` (about 3,500 on a weekday, 0.1 s, 1.3 MB) and `hex_m`. `limit` now only controls how many worst stretches are listed, and defaults to 20. Factor minutes are a bus-pass-weighted mean over every stretch at that hour.
+- **Basemap.** Changed to the Stadia "Alidade Smooth" light grey tiles. They need no key on localhost; a deployed domain needs a free Stadia account. (CARTO Positron, which was tried first, now needs an API key.) Vector layers are drawn on a canvas.
+- **Removed the bus position markers** and the 15-second polling behind them. They came from the logger snapshot, not live data. The header no longer claims "Live" and now says the data is from the past.
+
+## Delay engine connected to the API (2026-11-08)
+
+The delay map and network stats now show real numbers from 70 days of archive data (27 Aug to 6 Nov 2026: 37M stop arrivals and 25M stretch observations), instead of mock data. They are typical patterns for an hour and day type, not live data.
+
+### Added
+
+- **`delay_engine/export_for_api.py`.** Reduces the analysis tables to small files in `backend/data/delay/` (about 7 MB):
+  - `segments.parquet`: about 277k rows covering 14.7k stretches, each by weekday/weekend and local hour. Each row has median lateness, median and p90 delay gained on the stretch, all-day lateness, rain and nearby-event effects, stop names and coordinates, and the route numbers using it.
+  - `network_hourly.parquet`: per day type and hour, the % of buses on time, % more than 5 min late, mean delay, and how many buses are more than 5 min late on a typical day.
+  - Copies of the route reliability CSVs, `current_delays.json` and `events.csv`.
+  - `meta.json`: the data window and the network-wide factor effects from the correlation and roadworks tables.
+
+  It runs in about 1 minute at 1.6 GB peak memory. It processes one day at a time and builds the medians in 8 slices of stretches, because a single query over all the data ran out of memory on a 16 GB laptop.
+- **`backend/app/services/delay.py` and `delay_routes.py`.** Real versions of:
+  - `/api/delay-map`. New optional parameters: `day_type`, `limit` (the worst N stretches, default 1500), `min_n` (default 20), `bbox`.
+  - `/api/network/summary` and `/api/typical-delay`, both taking an optional `day_type`.
+  - `/api/status`, which now reports `live: false` and the archive window.
+  - New `/api/late-buses`, which serves the `current_delays.py` output.
+
+  If the export files are missing, these endpoints return a 503 that says how to create them.
+
+### Changed
+
+- **Delay map meaning.** "Overall" is the stretch's typical all-day lateness, plus each enabled factor:
+  - time of day: how much later or earlier buses are at the selected hour
+  - weather: the measured rain effect, about 0
+  - events: the measured effect of an event nearby, which only matters near venues
+
+  Each factor's headline number is now the mean over the stretches shown, not the maximum, because a few noisy stretches dominated the maximum. The weather and events descriptions use the measured effects, and the event pins show events from `events.csv` for today.
+- **Schemas** gained optional fields: `day_type`, `data_from`, `data_to` and `data_days` on `DelayMap`; `lines` and `observations` on `Segment`; `day_type` and `buses` on `NetworkSummary`. `Weather.temp_c` and `Weather.wind_kmh` can now be null, because there is no live weather feed.
+- **Frontend.**
+  - The planner's stats now show typical figures for the current hour, under the heading "Typical at this hour", instead of `–`.
+  - The delay panel's "Sample data" warning is replaced with the data window.
+  - The hour chart now covers 06:00–23:00 instead of 07:00–18:00.
+  - Stretch tooltips show the lines using the stretch and how many bus passes the numbers come from.
+- **Still mocked:** `/api/vehicles`, `/api/route` and `/api/places`. Journeys don't have predicted delays yet.
+
 ## Repo cleanup (2026-11-08)
 
 ### Removed
