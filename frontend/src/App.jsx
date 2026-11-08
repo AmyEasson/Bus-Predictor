@@ -144,6 +144,7 @@ export default function App() {
   const [journeys, setJourneys] = useState([]);
   const [journeyLoading, setJourneyLoading] = useState(false);
   const [journeyError, setJourneyError] = useState(null);
+  const [selectedJourney, setSelectedJourney] = useState(null);
 
   useEffect(() => {
     const load = async () => {
@@ -210,14 +211,31 @@ export default function App() {
 
   return (
     <div className="app">
-      <Header activeTab={tab} setActiveTab={setTab} asOf={asOf} />
+      <Header
+        activeTab={tab}
+        setActiveTab={(newTab) => {
+          setTab(newTab);
+          if (newTab !== 'plan') {
+            setSelectedJourney(null);
+          }
+        }}
+        asOf={asOf}
+      />
       <div className="main">
         <aside className="side">
           {tab === 'delay-map' ? (
             <DelayPanel data={delay} error={delayErr} colourBy={colourBy} setColourBy={setColourBy} factors={factors} toggleFactor={toggleFactor} hour={hour} setHour={setHour} />
           ) : searched ? (
             <>
-              <button className="back" onClick={() => setSearched(false)}>← Edit search</button>
+              <button
+                className="back"
+                onClick={() => {
+                  setSearched(false);
+                  setSelectedJourney(null);
+                }}
+              >
+                ← Edit search
+              </button>
               <div>
   <h1>{fromStop.stop_name} to {toStop.stop_name}</h1>
   <p className="sub">
@@ -239,7 +257,17 @@ export default function App() {
   </div>
     ) : (
       journeys.map((journey) => (
-        <div className="card" key={journey.trip_id}>
+       <div
+          className="card"
+          key={journey.trip_id}
+          onClick={() => setSelectedJourney(journey)}
+          style={{
+            cursor: 'pointer',
+            border: selectedJourney?.trip_id === journey.trip_id
+              ? '2px solid #3b7a57'
+              : undefined,
+          }}
+        >
           <div className="card-top">
             <span className="line-tag">Route {journey.route}</span>
             <span className="chip green">Direct</span>
@@ -323,7 +351,11 @@ export default function App() {
           {tab === 'plan' && !firstLoad && buses.length === 0 && <div className="toast err">No bus data found</div>}
           
           {/* Pass hoveredStop down into BusMap */}
-          <BusMap buses={tab === 'plan' ? buses : []} hoveredStop={hoveredStop}>
+          <BusMap
+              buses={tab === 'plan' ? buses : []}
+              hoveredStop={hoveredStop}
+              selectedJourney={selectedJourney}
+            >
             {tab === 'delay-map' && <DelayLayer data={delay} />}
           </BusMap>
           

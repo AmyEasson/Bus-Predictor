@@ -12,7 +12,12 @@ const hoveredStopIcon = L.divIcon({
   iconAnchor: [20, 20]
 });
 
-export function BusMap({ buses = [], hoveredStop = null, children }) {
+export function BusMap({
+  buses = [],
+  hoveredStop = null,
+  selectedJourney = null,
+  children
+}) {
   // Safely check if hoveredStop has valid numeric coordinates
   const hasValidHoverStop = 
     hoveredStop && 
@@ -31,7 +36,7 @@ export function BusMap({ buses = [], hoveredStop = null, children }) {
       />
 
       {/* Render live buses safely */}
-      {buses.map((bus) => {
+      {!selectedJourney && buses.map((bus) => {
         if (bus.latitude == null || bus.longitude == null) return null;
         return (
           <Marker 
@@ -61,6 +66,29 @@ export function BusMap({ buses = [], hoveredStop = null, children }) {
           </Popup>
         </Marker>
       )}
+
+      {/* Selected journey stops */}
+      {selectedJourney?.stops?.map((stop, index) => {
+        if (stop.stop_lat == null || stop.stop_lon == null) return null;
+
+        return (
+          <Marker
+            key={`${selectedJourney.trip_id}-${stop.stop_sequence}`}
+            position={[stop.stop_lat, stop.stop_lon]}
+          >
+            <Popup>
+              <strong>{stop.stop_name}</strong>
+              <div>
+                {index === 0
+                  ? 'Origin'
+                  : index === selectedJourney.stops.length - 1
+                    ? 'Destination'
+                    : 'Along the route'}
+              </div>
+            </Popup>
+          </Marker>
+        );
+      })}
 
       {children}
     </MapContainer>
