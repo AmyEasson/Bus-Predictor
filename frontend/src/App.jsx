@@ -24,6 +24,16 @@ const TONE = {
 
 const TIME_MODES = ['Depart after', 'Arrive by'];
 
+function getJourneyKey(journey) {
+  if (journey.journey_type === 'transfer') {
+    return journey.legs
+      .map((leg) => leg.trip_id)
+      .join('-');
+  }
+
+  return journey.trip_id;
+}
+
 function StopAutocomplete({ label, onSelect, onHover, color }) {
   const [query, setQuery] = useState('');
   const [suggestions, setSuggestions] = useState([]);
@@ -229,7 +239,7 @@ export default function App() {
     );
   };
 
-  // Search for direct journeys using the selected date and time.
+  // Search for direct and transfer journeys using the selected date and time.
   const handleSearch = async () => {
     setJourneyLoading(true);
     setJourneyError(null);
@@ -337,7 +347,7 @@ export default function App() {
                   {fromStop.stop_name} to {toStop.stop_name}
                 </h1>
                 <p className="sub">
-                  {journeys.length} direct journeys found
+                  {journeys.length} journeys found
                 </p>
                 <p className="journey-date">
                   {new Date(`${selectedDate}T12:00:00`).toLocaleDateString('en-GB', {
@@ -357,61 +367,118 @@ export default function App() {
                   </div>
                 </div>
               ) : (
-                journeys.map((journey) => (
-                  <div
-                    className="card"
-                    key={journey.trip_id}
-                    onClick={() => setSelectedJourney(journey)}
-                    style={{
-                      cursor: 'pointer',
-                      border:
-                        selectedJourney?.trip_id === journey.trip_id
+                journeys.map((journey) => {
+                  const isTransfer = journey.journey_type === 'transfer';
+                  const journeyKey = getJourneyKey(journey);
+                  const isSelected =
+                    selectedJourney &&
+                    getJourneyKey(selectedJourney) === journeyKey;
+
+                  return (
+                    <div
+                      className="card"
+                      key={journeyKey}
+                      onClick={() => setSelectedJourney(journey)}
+                      style={{
+                        cursor: 'pointer',
+                        border: isSelected
                           ? '2px solid #3b7a57'
                           : undefined,
-                    }}
-                  >
-                    <div className="card-top">
-                      <span className="line-tag">
-                        Route {journey.route}
-                      </span>
-                      <span className="chip green">Direct</span>
-                    </div>
+                      }}
+                    >
+                      <div className="card-top">
+                        {isTransfer ? (
+                          <>
+                            <span className="line-tag">
+                              Route {journey.legs[0].route}
+                            </span>
+                            <span className="line-tag">
+                              Route {journey.legs[1].route}
+                            </span>
+                            <span className="chip amber">1 change</span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="line-tag">
+                              Route {journey.route}
+                            </span>
+                            <span className="chip green">Direct</span>
+                          </>
+                        )}
+                      </div>
 
-                    <div className="big">
-                      {journey.duration_minutes} min
-                    </div>
+                      <div className="big">
+                        {journey.duration_minutes} min
+                      </div>
 
-                    <div className="meta">
-                      <span>
-                        {journey.departure_time.slice(0, 5)}
-                        {' → '}
-                        {journey.arrival_time.slice(0, 5)}
-                      </span>
-                      <span>{journey.destination}</span>
-                    </div>
+                      <div className="meta">
+                        <span>
+                          {journey.departure_time.slice(0, 5)}
+                          {' → '}
+                          {journey.arrival_time.slice(0, 5)}
+                        </span>
+                        {isTransfer ? (
+                          <span>
+                            Change at {journey.interchange_stop.stop_name}
+                          </span>
+                        ) : (
+                          <span>{journey.destination}</span>
+                        )}
+                      </div>
 
-                    {journey.stops && (
-                      <details>
-                        <summary>
-                          View stops ({journey.stops.length})
-                        </summary>
-
-                        <div className="journey-stops">
-                          {journey.stops.map((stop) => (
-                            <div
-                              key={`${journey.trip_id}-${stop.stop_sequence}`}
-                            >
-                              {stop.stop_name}
-                              <span>
-                                {stop.arrival_time?.slice(0, 5)}
-                              </span>
-                            </div>
-                          ))}
+                      {isTransfer && (
+                        <div className="meta">
+                          <span>
+                            {journey.transfer_wait_minutes} min between buses
+                          </span>
                         </div>
-                      </details>
-                    )}
-                  </div>
-                ))
+                      )}
+
+                      {isTransfer && (
+                        <details>
+                          <summary>Journey details</summary>
+
+                          <div className="journey-stops">
+                            {journey.legs.map((leg, index) => (
+                              <div key={leg.trip_id}>
+                                <strong>
+                                  Leg {index + 1}: Route {leg.route}
+                                </strong>
+                                <span>
+                                  {leg.departure_time.slice(0, 5)}
+                                  {' → '}
+                                  {leg.arrival_time.slice(0, 5)}
+                                </span>
+                                <span>{leg.destination}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </details>
+                      )}
+
+                      {journey.stops && (
+                        <details>
+                          <summary>
+                            View stops ({journey.stops.length})
+                          </summary>
+
+                          <div className="journey-stops">
+                            {journey.stops.map((stop, index) => (
+                              <div
+                                key={`${stop.stop_id}-${index}`}
+                              >
+                                {stop.stop_name}
+                                <span>
+                                  {stop.arrival_time?.slice(0, 5)}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </details>
+                      )}
+                    </div>
+                  );
+                })
               )}
             </>
           ) : (

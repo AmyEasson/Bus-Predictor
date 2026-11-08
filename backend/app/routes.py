@@ -1,4 +1,4 @@
-# routes.py
+
 from fastapi import APIRouter, HTTPException, Query
 import pandas as pd
 from typing import Optional
@@ -7,9 +7,13 @@ import numpy as np
 from datetime import date
 
 from .services.stops import search_bus_stops
-from .services.journey import find_direct_journeys
+from .services.journey import (
+    find_direct_journeys,
+    find_transfer_journeys
+)
 
 router = APIRouter(prefix="/api", tags=["buses"])
+
 
 @router.get("/stops/search")
 def search_stops(
@@ -33,10 +37,12 @@ def search_stops(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @router.get("/")
 def api_root():
     """Welcome message for the API."""
     return {"message": "Another Bus API is running live!"}
+
 
 @router.get("/routes")
 def get_routes():
@@ -45,9 +51,9 @@ def get_routes():
         con = get_db_connection()
         query = """
             SELECT published_line_name, COUNT(DISTINCT operator_ref || vehicle_ref) AS active_buses
-            FROM positions 
+            FROM positions
             WHERE published_line_name IS NOT NULL AND published_line_name != ''
-            GROUP BY published_line_name 
+            GROUP BY published_line_name
             ORDER BY active_buses DESC;
         """
         df = pd.read_sql(query, con)
@@ -60,13 +66,17 @@ def get_routes():
             {"published_line_name": "142", "active_buses": 4}
         ]
 
+
 @router.get("/buses/{line_name}")
-def get_buses_for_route(line_name: str, limit: Optional[int] = Query(100, le=500)):
+def get_buses_for_route(
+    line_name: str,
+    limit: Optional[int] = Query(100, le=500)
+):
     """Get the latest recorded GPS points for a specific route."""
     try:
         con = get_db_connection()
         query = """
-            SELECT operator_ref, vehicle_ref, published_line_name, destination_name, 
+            SELECT operator_ref, vehicle_ref, published_line_name, destination_name,
                    latitude, longitude, bearing, recorded_at
             FROM positions
             WHERE published_line_name = ?
@@ -79,6 +89,7 @@ def get_buses_for_route(line_name: str, limit: Optional[int] = Query(100, le=500
         return df.to_dict(orient="records")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.get("/buses/all/live")
 def get_all_live_buses(limit: Optional[int] = Query(150, le=500)):
@@ -114,16 +125,19 @@ def get_journeys(
     limit: int = Query(10, ge=1, le=50),
     include_stops: bool = Query(False),
     departure_after: Optional[str] = Query(
-    None,
-    pattern=r"^([01]\d|2[0-3]):[0-5]\d$"),
+        None,
+        pattern=r"^([01]\d|2[0-3]):[0-5]\d"
+    ),
     arrive_by: Optional[str] = Query(
-    None,
-    pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+        None,
+        pattern=r"^([01]\d|2[0-3]):[0-5]\d"
+    )
 ):
-    """Find direct bus journeys operating on a selected date."""
+    """Find direct and one-transfer bus journeys operating on a selected date."""
 
     try:
-        journeys = find_direct_journeys(
+        # Find journeys that use a single bus.
+        direct_journeys = find_direct_journeys(
             origin_stop_id=origin_stop_id,
             destination_stop_id=destination_stop_id,
             travel_date=travel_date,
@@ -132,15 +146,42 @@ def get_journeys(
             arrive_by=arrive_by
         )
 
+        # Find journeys that require changing buses once.
+        transfer_journeys = find_transfer_journeys(
+            origin_stop_id=origin_stop_id,
+            destination_stop_id=destination_stop_id,
+            travel_date=travel_date,
+            limit=limit,
+            departure_after=departure_after,
+            arrive_by=arrive_by
+        )
+
+        # Identify direct journeys so the frontend can distinguish them
+        # from journeys involving a transfer.
+        for journey in direct_journeys:
+            journey["journey_type"] = "direct"
+
+        # Combine both types of journey.
+        journeys = direct_journeys + transfer_journeys
+
+        # Sort all results by departure time.
+        journeys.sort(
+            key=lambda journey: journey["departure_time"]
+        )
+
+        # Apply the requested limit to the combined results.
+        journeys = journeys[:limit]
+
+        # Remove stop details if they were not requested.
         if not include_stops:
-            journeys = [
-                {
-                    key: value
-                    for key, value in journey.items()
-                    if key != "stops"
-                }
-                for journey in journeys
-            ]
+            for journey in journeys:
+                journey.pop("stops", None)
+
+                # Transfer journeys also contain stop details
+                # inside each individual leg.
+                if journey.get("journey_type") == "transfer":
+                    for leg in journey.get("legs", []):
+                        leg.pop("stops", None)
 
         return {
             "origin_stop_id": origin_stop_id,
