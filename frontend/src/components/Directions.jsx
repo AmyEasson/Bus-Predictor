@@ -46,17 +46,19 @@ function Tag({ journey }) {
 function RiskMeter({ journey }) {
   const { pct, level, source, p90 } = riskOf(journey);
   if (!level) return null;
-  // meter: the model's bad-day delay on a 0-15 min scale, or the historical late share
-  const fill = source === 'model' ? Math.min(100, (p90 / 15) * 100) : pct;
+  // meter: the bad-day delay on a 0-15 min scale (model or history, same meaning)
+  const fill = Math.min(100, (p90 / 15) * 100);
   return (
     <div className="risk">
       <div className="risk-head">
         <span className="muted small help" title={RISK_HELP}>Delay risk ⓘ</span>
-        <span className={`chip ${RISK_CHIP[level]}`} title={RISK_HELP}>{RISK_TEXT[level]}{source === 'history' ? ` · ${pct}%` : ''}</span>
-        {source === 'model' && <span className="muted small">bad day: +{p90.toFixed(1)} min</span>}
+        <span className={`chip ${RISK_CHIP[level]}`} title={RISK_HELP}>{RISK_TEXT[level]}</span>
+        <span className="muted small">
+          bad day: +{p90.toFixed(1)} min{source === 'history' ? ' (past data)' : source === 'typical' ? ' (typical for this time)' : ''}
+        </span>
       </div>
       <div className="meter"><i style={{ width: `${Math.max(3, fill)}%`, background: `var(--${RISK_CHIP[level]})` }} /></div>
-      {source === 'model' && pct != null && (
+      {pct != null && (
         <span className="muted small">In past data, {pct}% of these buses ran 5+ min late at this time</span>
       )}
     </div>
@@ -87,7 +89,7 @@ function RouteCard({ journey, onSelect }) {
   const arrive = addMin(hhmm(journey.arrival_time), Math.max(0, minutes ?? 0));
   return (
     <li>
-      <div className={`route-card ${journey._tag === 'reliable' ? 'best' : ''}`} onClick={onSelect} role="button" tabIndex={0}
+      <div className={`route-card ${journey._tag === 'best' ? 'best' : ''}`} onClick={onSelect} role="button" tabIndex={0}
         onKeyDown={(e) => e.key === 'Enter' && onSelect()}>
         <div className="rc-top">
           <span className="rc-tags">
@@ -112,23 +114,23 @@ function RouteCard({ journey, onSelect }) {
   );
 }
 
-// Fastest on paper vs most reliable, side by side
+// Fastest on paper vs the best option, side by side - only when the fastest-looking route isn't the best one
 function FastVsSafe({ routes, selected, onSelect }) {
   const fastest = routes.find((r) => r._tag === 'fastest');
-  const reliable = routes.find((r) => r._tag === 'reliable');
+  const reliable = routes.find((r) => r._tag === 'best');
   if (!fastest || !reliable) return null;
   return (
     <div className="block">
       <div className="label">Fast vs safe</div>
       <div className="vs">
         {[fastest, reliable].map((j) => {
-          const { level, pct, source } = riskOf(j);
+          const { level } = riskOf(j);
           const on = journeyKey(j) === journeyKey(selected);
           return (
             <button key={journeyKey(j)} className={`vs-card ${on ? 'on' : ''}`} onClick={() => onSelect(j)}>
-              <span className={`vs-label ${j._tag}`}>{LABELS[j._tag].text}</span>
+              <span className={`vs-label ${j._tag === 'fastest' ? 'fastest' : 'reliable'}`}>{LABELS[j._tag].text}</span>
               <Duration journey={j} big={false} />
-              {level && <span className={`chip ${RISK_CHIP[level]}`}>Risk {RISK_TEXT[level]}{source === 'history' && pct != null ? ` · ${pct}%` : ''}</span>}
+              {level && <span className={`chip ${RISK_CHIP[level]}`}>Risk {RISK_TEXT[level]}</span>}
             </button>
           );
         })}
@@ -143,9 +145,7 @@ function WhyPanel({ journey }) {
   const ins = journey.insight;
   if (!ins) return null;
   const max = Math.max(1, ...ins.factors.map((f) => Math.abs(f.minutes)));
-  const title = journey._tag === 'fastest' && riskOf(journey).level !== 'low'
-    ? 'Why the fastest route is risky'
-    : 'What affects this route';
+  const title = journey._tag === 'fastest' ? 'Why the fastest-looking route is risky' : 'What affects this route';
   return (
     <div className="block">
       <div className="label">{title}</div>
@@ -280,14 +280,14 @@ export function Directions({ from, to, setFrom, setTo, onHover, selected, onSele
   const ranked = useMemo(() => rankRoutes(state.journeys ?? [], sortBy), [state.journeys, sortBy]);
   useEffect(() => { onResults?.(ranked); }, [ranked, onResults]);
   useEffect(() => {
-    if (ranked.length && from && to) onSearched?.(from, to, ranked.find((r) => r._tag === 'reliable') ?? ranked[0]);
+    if (ranked.length && from && to) onSearched?.(from, to, ranked.find((r) => r._tag === 'best') ?? ranked[0]);
   }, [ranked]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const swap = () => { setFrom(to); setTo(from); };
 
   if (selected) {
     const sel = ranked.find((r) => journeyKey(r) === journeyKey(selected)) ?? selected;
-    const { level, pct, source } = riskOf(sel);
+    const { level } = riskOf(sel);
     return (
       <div className="sheet dir">
         <button className="back-link" onClick={() => onSelectJourney(null)}>← All routes</button>
@@ -295,7 +295,7 @@ export function Directions({ from, to, setFrom, setTo, onHover, selected, onSele
           <div className="sheet-head">
             <h2>
               {LABELS[sel._tag]?.text ?? 'Route'}{' '}
-              {level && <span className={`chip ${RISK_CHIP[level]}`}>{RISK_TEXT[level]} risk{source === 'history' && pct != null ? ` · ${pct}%` : ''}</span>}
+              {level && <span className={`chip ${RISK_CHIP[level]}`}>{RISK_TEXT[level]} risk</span>}
             </h2>
             <div className="muted">
               <Lines journey={sel} /> · {from?.stop_name} → {to?.stop_name} · {hhmm(sel.departure_time)}–{hhmm(sel.arrival_time)}

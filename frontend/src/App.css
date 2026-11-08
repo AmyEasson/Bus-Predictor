@@ -358,3 +358,25 @@ button { cursor: pointer; }
   margin: -4px -6px -10px; padding: 4px 6px 10px; }
 .panel-body > .sheet { flex: none; }
 .help { cursor: help; }
+
+/* ---------- stop dots with direction arrows ---------- */
+.stop-dot-wrap { background: none; border: 0; }
+.stop-dot { position: relative; width: 22px; height: 22px; cursor: pointer; }
+.stop-dot span {
+  position: absolute; left: 5px; top: 5px; width: 12px; height: 12px; border-radius: 50%;
+  background: #fff; border: 2.5px solid var(--accent); box-sizing: border-box; box-shadow: 0 0 0 1px rgba(255,255,255,.9);
+}
+/* the arrow is a triangle touching the top of the dot, rotated about the dot's centre to the bearing,
+   so dot + arrow read as one pointer in the direction buses travel */
+.stop-arrow { position: absolute; inset: 0; transform-origin: 50% 50%; }
+.stop-arrow::before {
+  content: ""; position: absolute; left: 6px; top: 0;
+  border-left: 5px solid transparent; border-right: 5px solid transparent; border-bottom: 7px solid var(--accent);
+  filter: drop-shadow(0 0 1px rgba(255,255,255,.9));
+}
+.stop-dot:hover span { background: var(--accent-soft); transform: scale(1.15); }
+.stop-dot.place span, .stop-dot.to span { border-color: var(--red); background: var(--red); }
+.stop-dot.place .stop-arrow::before, .stop-dot.to .stop-arrow::before { border-bottom-color: var(--red); }
+.stop-dot.from span { background: var(--accent); }
+.stop-choice { display: flex; flex-direction: column; gap: 6px; min-width: 190px; }
+.stop-choice .action { justify-content: center; }

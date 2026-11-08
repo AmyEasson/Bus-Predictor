@@ -83,7 +83,7 @@ function FitTo({ journeys }) {
 // after a pick, the chosen route coloured by delay plus the alternative it was compared with, faded.
 export function RouteOverlay({ routes, selected }) {
   if (!routes?.length) return null;
-  const reliable = routes.find((r) => r._tag === 'reliable');
+  const reliable = routes.find((r) => r._tag === 'best'); // the recommendation, drawn solid
   const fastest = routes.find((r) => r._tag === 'fastest');
 
   if (!selected) {
@@ -97,9 +97,9 @@ export function RouteOverlay({ routes, selected }) {
   }
 
   const sel = routes.find((r) => journeyKey(r) === journeyKey(selected)) ?? selected;
-  const alt = sel._tag === 'reliable' ? fastest : reliable;
+  const alt = sel._tag === 'best' ? fastest : reliable;
   const worst = sel.insight?.worst;
-  const altWorst = alt && sel._tag === 'reliable' ? alt.insight?.worst : null;
+  const altWorst = alt && sel._tag === 'best' ? alt.insight?.worst : null;
   return (
     <>
       <FitTo journeys={[sel]} />
@@ -131,20 +131,20 @@ export function RouteOverlay({ routes, selected }) {
 // Small key at the top of the map while options are shown.
 export function RouteLegend({ routes, selected }) {
   if (!routes?.length) return null;
-  const reliable = routes.find((r) => r._tag === 'reliable');
+  const reliable = routes.find((r) => r._tag === 'best');
   const fastest = routes.find((r) => r._tag === 'fastest');
   if (selected) {
     return (
       <div className="map-key">
         <span><i className="sw grad" /> Coloured by how late buses usually are</span>
         {fastest && journeyKey(fastest) !== journeyKey(selected) && <span><i className="sw dash" /> Fastest on paper · {lineList(fastest).join(' › ')}</span>}
-        {reliable && journeyKey(reliable) !== journeyKey(selected) && <span><i className="sw blue" /> Most reliable · {lineList(reliable).join(' › ')}</span>}
+        {reliable && journeyKey(reliable) !== journeyKey(selected) && <span><i className="sw blue" /> Best option · {lineList(reliable).join(' › ')}</span>}
       </div>
     );
   }
   return (
     <div className="map-key">
-      {reliable && <span><i className="sw blue" /> Most reliable · {lineList(reliable).join(' › ')}</span>}
+      {reliable && <span><i className="sw blue" /> Best option · {lineList(reliable).join(' › ')}</span>}
       {fastest && <span><i className="sw dash" /> Fastest on paper · {lineList(fastest).join(' › ')}</span>}
     </div>
   );

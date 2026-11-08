@@ -3,6 +3,9 @@ buses typically are there (delay engine export)."""
 from datetime import date, datetime
 from functools import lru_cache
 
+import numpy as np
+import pandas as pd
+
 from . import delay
 from .journey import get_active_service_ids, load_timetable_data
 
@@ -23,13 +26,31 @@ def stop_summaries():
     heads = (x[x.trip_headsign.fillna("") != ""].groupby(["stop_id", "trip_headsign"]).size()
              .reset_index(name="n").sort_values("n", ascending=False).drop_duplicates("stop_id")
              .set_index("stop_id").trip_headsign)
-    return {"lines": lines.to_dict(), "towards": heads.to_dict()}
+
+    # Direction of travel: compass bearing to the stop buses most often go to next from here.
+    srt = st.sort_values(["trip_id", "stop_sequence"])
+    nxt = srt.groupby("trip_id").stop_id.shift(-1)
+    pairs = (pd.DataFrame({"stop_id": srt.stop_id, "next_id": nxt}).dropna()
+             .groupby(["stop_id", "next_id"]).size().reset_index(name="n")
+             .sort_values("n", ascending=False).drop_duplicates("stop_id"))
+    _, _, _, stops = load_timetable_data()
+    pos = stops.set_index("stop_id")[["stop_lat", "stop_lon"]]
+    a = pos.reindex(pairs.stop_id).to_numpy()
+    b = pos.reindex(pairs.next_id).to_numpy()
+    lat1, lat2 = np.radians(a[:, 0]), np.radians(b[:, 0])
+    dlon = np.radians(b[:, 1] - a[:, 1])
+    brg = (np.degrees(np.arctan2(np.sin(dlon) * np.cos(lat2),
+                                 np.cos(lat1) * np.sin(lat2) - np.sin(lat1) * np.cos(lat2) * np.cos(dlon))) + 360) % 360
+    bearing = {sid: int(round(v)) for sid, v in zip(pairs.stop_id, brg) if np.isfinite(v)}
+    return {"lines": lines.to_dict(), "towards": heads.to_dict(), "bearing": bearing}
 
 
 def describe_stop(stop_id):
-    """{"lines": [...], "towards": str | None} for one stop."""
+    """{"lines": [...], "towards": str | None, "bearing": degrees or None} for one stop.
+    bearing = compass direction buses leave the stop in (0 = north, 90 = east)."""
     s = stop_summaries()
-    return {"lines": s["lines"].get(stop_id, []), "towards": s["towards"].get(stop_id)}
+    return {"lines": s["lines"].get(stop_id, []), "towards": s["towards"].get(stop_id),
+            "bearing": s["bearing"].get(stop_id)}
 
 
 def _hhmm(seconds):

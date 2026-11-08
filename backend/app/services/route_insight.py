@@ -57,7 +57,21 @@ def _reliability():
     if not p.exists():
         return {}
     r = pd.read_csv(p, dtype={"route_id": str})
-    return {(row.route_id, row.band): (float(row.late_pct), int(row.n)) for row in r.itertuples(index=False)}
+    # (share of buses >5 min late, n, 90th-percentile delay in s): the P90 means the same as the model's P90
+    return {(row.route_id, row.band): (float(row.late_pct), int(row.n), float(row.p90_delay_s))
+            for row in r.itertuples(index=False)}
+
+
+@lru_cache(maxsize=1)
+def _band_typical_p90():
+    """{band: median 90th-percentile delay (s) across all routes in route_reliability_by_band.csv}.
+    The fallback bad-day delay for a route too quiet to be in that table (it needs 2,000+ observations per band):
+    without it an unknown route counted as 0 min late on a bad day and could be ranked "Best option"."""
+    p = delay.DATA / "route_reliability_by_band.csv"
+    if not p.exists():
+        return {}
+    r = pd.read_csv(p)
+    return r.groupby("band").p90_delay_s.median().to_dict()
 
 
 @lru_cache(maxsize=1)
@@ -109,7 +123,8 @@ def journey_insight(j, travel_date: date):
     stretches, tod_last, event_s, events_hit = [], 0.0, 0.0, set()
     timed = []  # (path, seconds since service-day start) of every stretch ridden, for road works
     n_pairs = n_hit = observations = 0
-    leg_late, on_time_probs, last_late = [], [], None
+    leg_late, on_time_probs, last_late, leg_p90 = [], [], None, []  # leg_p90: (minutes, "route" | "typical")
+    band_p90 = _band_typical_p90()
     for leg in _legs(j):
         stops = leg.get("stops") or []
         leg_tod = None
@@ -149,6 +164,9 @@ def journey_insight(j, travel_date: date):
             got = rel.get((rid, _band_name(hour0, weekend))) if rid else None
             if got:
                 on_time_probs.append(1 - got[0] / 100)
+                leg_p90.append((got[2] / 60, "route"))
+            elif _band_name(hour0, weekend) in band_p90:  # quiet route: typical for this time band
+                leg_p90.append((band_p90[_band_name(hour0, weekend)] / 60, "typical"))
 
     # Rain: per-stretch estimates are noisy (summed over a route they swing by +-1 min), so use the network-wide
     # measured effect (moderate rain vs dry, per stretch) times the stretches ridden.
@@ -158,6 +176,14 @@ def journey_insight(j, travel_date: date):
 
     coverage = n_hit / n_pairs if n_pairs else 0.0
     risk_pct = round(100 * (1 - math.prod(on_time_probs))) if on_time_probs else None
+    # Bad-day delay from history, on the same scale as the model's P90: the line's 90th-percentile delay for this
+    # time band. How late you arrive is the last bus's lateness, so the last leg's P90 (an earlier leg mainly
+    # threatens the connection, which the model handles).
+    # If the line isn't in the table (too few buses), the typical P90 for that time band stands in, flagged
+    # "typical", so every option has a bad-day figure and none is ranked as if it could never be late.
+    last = leg_p90[-1] if leg_p90 and len(leg_p90) == len(_legs(j)) else None
+    bad_day_min = round(last[0], 1) if last else None
+    bad_day_basis = last[1] if last else None
     worst = max((s for s in stretches if s["added_s"] is not None), key=lambda s: s["added_s"], default=None)
     if worst is not None and worst["added_s"] < 30:
         worst = None  # nothing worth calling out
@@ -206,6 +232,8 @@ def journey_insight(j, travel_date: date):
         "stretches": stretches,
         "typical_late_min": None if typical is None else round(typical, 1),
         "risk_pct": risk_pct,
+        "bad_day_min": bad_day_min,
+        "bad_day_basis": bad_day_basis,
         "factors": factors,
         "worst": worst,
         "roadworks": works_on_route,

@@ -1,5 +1,29 @@
 # Changelog
 
+## Route ranking judged on arrival time (2026-11-08)
+
+### Fixed
+
+- **A slow route with no delay could be recommended over a fast one with a small delay.** For example, a 45-min route with no delay was "Most reliable" over a 13-min route expected 2 min late, even though the 13-min route arrives about 30 min earlier even on a bad day. Routes are now judged on **when you'd arrive on a bad day**: scheduled arrival plus bad-day delay (the model's P90, else the historical estimate). Tags (`routeRanking.js`):
+  - **Best option:** earliest bad-day arrival. It's the recommendation, drawn solid on the map and highlighted, and the default sort.
+  - **Most reliable:** the smallest bad-day delay, but only among routes arriving within 10 min of the best (`RELIABLE_WINDOW_MIN`), and only if steadier than the best. A long detour can't win it.
+  - **Fastest on paper:** the shortest timetable, tagged only when it isn't the best option, i.e. it looks quickest but arrives later on a bad day. Only then does "Fast vs safe" appear (fastest on paper against the best option), with "Why the fastest-looking route is risky".
+- **Checked on real searches.** North Manchester General → Lathbury Road at 11:00: the 34-min 156 › 118 is no longer promoted, because it arrives 12 min after the best option even on a bad day. Langham Road → Belfield Road at 17:00: Best 23 › 142 (17:47), Most reliable 371 › 42 (17:49, steadier), Fastest on paper 42 (17:51 on a bad day).
+
+## Stops on the map, UI tidy-ups (2026-11-08)
+
+- **Stop dots show direction of travel.** Each dot has an arrow pointing to the stop buses most often go to next, taken from the timetable (`bearing` in `describe_stop`; 15,300 stops have one, and the rest are only places where buses finish). The two "Belfield Road" stands point opposite ways (358° and 171°).
+- **Picking a second stop on the map.**
+  - With a stop card open, clicking another stop asks "Directions from [first stop] to here" or "View this stop". When the two stops share a name, the first stop's direction is added.
+  - In directions, stop dots stay visible until a route is picked. Clicking one fills the empty box (From, then To); if both are filled it asks "Set as start" or "Set as destination".
+  - Chosen stops are drawn red (place / destination) or filled blue (start).
+- **Every bus stop shows on the map at street level (zoom 16+).** Stops are small white dots with a blue rim; hovering shows the name, direction and lines, and clicking opens the stop card. Only the stops in view are fetched, from the new `GET /api/stops-in-area?bbox=` (about 100 in the city centre, 0.03 s). That endpoint refuses areas larger than about 25 × 15 km and leaves out Metrolink stops, as search does. Stops aren't drawn in directions mode, to keep the route readable.
+- **Road works layer:** only works in progress with an effect of 5 s or more per stretch are shown (152 of 1,214 at weekday 17:00). The route breakdowns still count planned works due by the travel date.
+- **Removed:** the colour-by tabs on "What's slowing buses?" (the map always shows overall delay) and "View on delay map" on route cards (it did the same as "Route details").
+- **Delay risk** explains itself on hover: how late you could be on a bad day (1 trip in 10). Low is under 5 min, Medium 5–10, High over 10.
+
+**Memory note.** Each backend process uses about 2.4 GB once the timetable and model are loaded. On a 16 GB laptop with browsers open, two backends at once can trigger the kernel's out-of-memory killer, which is what stopped a test backend and a browser at 10:30.
+
 ## Road works in the app (2026-11-08)
 
 Brings the road-works analysis (`archival_data/filter_roadworks.py`, `roadworks_flag.py`, `roadworks_explain.py`, `roadworks_by_hour.py`) into the app. Road works are known in advance from Street Manager permits, so they can inform delays before they happen.

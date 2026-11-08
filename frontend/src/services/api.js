@@ -83,3 +83,9 @@ export async function fetchStopInfo(stopId) {
   const response = await axios.get(`${API_BASE_URL}/api/stops/${encodeURIComponent(stopId)}`);
   return response.data;
 }
+
+// Bus stops inside a map area (only answers when zoomed in, see StopsLayer)
+export async function fetchStopsInArea(bbox) {
+  const response = await axios.get(`${API_BASE_URL}/api/stops-in-area`, { params: { bbox } });
+  return response.data;
+}

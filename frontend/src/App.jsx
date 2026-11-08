@@ -11,6 +11,7 @@ import { RouteOverlay, RouteLegend } from './components/RouteOverlay';
 import { expectedDelay } from './components/routeRanking';
 import { fetchDelayMap, fetchNetworkSummary, fetchRoadworks } from './services/delayApi';
 import { RoadworksLayer, RoadworksCard } from './components/Roadworks';
+import { StopsLayer } from './components/StopsLayer';
 
 // Hexagon width (m) for a zoom level: big cells for the whole city, fine ones on the street.
 // Must be one of the backend's HEX_SIZES.
@@ -130,6 +131,44 @@ export default function App() {
   };
 
   const inDirections = mode === 'directions';
+
+  // Clicking a stop on the map:
+  //   exploring          -> open its card
+  //   a stop card open   -> ask: directions from that stop to here, or view this one
+  //   directions         -> fill the empty box (From first); if both are set, ask which to replace
+  const chooseFrom = (s) => { setFrom(s); setSelectedJourney(null); };
+  const chooseTo = (s) => { setTo(s); setSelectedJourney(null); };
+  const onStopClick = (s) => {
+    if (inDirections) {
+      if (!from) chooseFrom(s);
+      else if (!to) chooseTo(s);
+      return;
+    }
+    pickPlace(s);
+  };
+  const stopChoices = (s) => {
+    if (inDirections) {
+      if (!from || !to) return null;
+      return [
+        { label: 'Set as start', action: () => chooseFrom(s) },
+        { label: 'Set as destination', action: () => chooseTo(s) },
+      ];
+    }
+    if (mode === 'place' && place && place.stop_id !== s.stop_id) {
+      return [
+        {
+          // stops often share a name (stands on either side of a road): say which one when they do
+          label: `Directions from ${place.stop_name}${place.stop_name === s.stop_name && place.towards ? ` (towards ${place.towards})` : ''}`,
+          action: () => openDirections({ from: place, to: s }),
+        },
+        { label: 'View this stop', action: () => pickPlace(s) },
+      ];
+    }
+    return null;
+  };
+  const stopHighlight = inDirections
+    ? { ...(from ? { [from.stop_id]: 'from' } : {}), ...(to ? { [to.stop_id]: 'to' } : {}) }
+    : place ? { [place.stop_id]: 'place' } : {};
   const pins = inDirections
     ? [from && { stop: from, kind: 'from' }, to && { stop: to, kind: 'to' }].filter(Boolean)
     : place ? [{ stop: place, kind: 'place' }] : [];
@@ -145,6 +184,10 @@ export default function App() {
       >
         {layerOn && <DelayLayer data={delay} onViewChange={setMapView} />}
         {worksOn && <RoadworksLayer data={works} />}
+        {/* every stop when zoomed in to street level; hidden once a route is picked, to keep it readable */}
+        {!(inDirections && selectedJourney) && (
+          <StopsLayer onPick={onStopClick} choicesFor={stopChoices} highlight={stopHighlight} />
+        )}
         {inDirections && <RouteOverlay routes={routes} selected={selectedJourney} />}
       </BusMap>
 
@@ -155,8 +198,8 @@ export default function App() {
           <Directions
             from={from}
             to={to}
-            setFrom={(s) => { setFrom(s); setSelectedJourney(null); }}
-            setTo={(s) => { setTo(s); setSelectedJourney(null); }}
+            setFrom={chooseFrom}
+            setTo={chooseTo}
             onHover={setHoveredStop}
             selected={selectedJourney}
             onSelectJourney={setSelectedJourney}
