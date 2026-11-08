@@ -50,56 +50,58 @@ CATEGORICAL = ["route", "direction", "to_stop"]
 # Loading stop arrivals
 # ------------------------------------------------------------------------------------------
 
+_GTFS_CACHE = {}
+
+
+def _gtfs_lookups(gtfs):
+    """Trip directions and stop names from the GTFS .parquet tables, loaded once per folder."""
+    if gtfs not in _GTFS_CACHE:
+        trips = pd.read_parquet(os.path.join(gtfs, "trips.parquet"))
+        trips = trips[["trip_id"] + (["direction_id"] if "direction_id" in trips else [])]
+        stops = pd.read_parquet(os.path.join(gtfs, "stops.parquet"), columns=["stop_id", "stop_name"])
+        _GTFS_CACHE[gtfs] = (trips, stops)
+    return _GTFS_CACHE[gtfs]
+
+
+def _trip_ends(gtfs, trip_ids):
+    """First and last stop_sequence of each trip - reads stop_times only for these trips
+    (the full North West stop_times table is far too big to load whole)."""
+    import pyarrow as pa
+    import pyarrow.compute as pc
+    import pyarrow.parquet as pq
+    t = pq.read_table(os.path.join(gtfs, "stop_times.parquet"), columns=["trip_id", "stop_sequence"])
+    t = t.filter(pc.is_in(t["trip_id"], value_set=pa.array(list(trip_ids), type=t["trip_id"].type)))
+    return t.to_pandas().groupby("trip_id").stop_sequence.agg(["min", "max"])
+
+
 def _read_team_arrivals(path, gtfs):
-    """Read arrivals.py output and add the GTFS fields needed by the model."""
+    """Read arrivals.py output (stop_arrivals.parquet) and add the GTFS fields the model needs.
+
+    arrivals.py columns -> model columns: line -> route_short_name, sched_arr_utc ->
+    scheduled_utc, actual_arr_utc -> actual_utc. run_id is rebuilt as
+    service_date|operator|vehicle|trip (arrivals.py's run_id is a per-file row number).
+    Added from the GTFS .parquet tables in `gtfs`: direction_id, stop_name, first/last-stop flags.
+    """
     sa = pd.read_parquet(path)
-    sa = sa.rename(columns={
-        "line": "route_short_name",
-        "sched_arr_utc": "scheduled_utc",
-        "actual_arr_utc": "actual_utc"
-    })
+    sa = sa.rename(columns={"line": "route_short_name", "sched_arr_utc": "scheduled_utc",
+                            "actual_arr_utc": "actual_utc"})
+    sa["run_id"] = (sa.service_date.astype(str) + "|" + sa.operator_ref.fillna("").astype(str)
+                    + "|" + sa.vehicle_ref.astype(str) + "|" + sa.trip_id.astype(str))
 
-    sa["run_id"] = (
-        sa.service_date.astype(str) + "|"
-        + sa.operator_ref.fillna("").astype(str) + "|"
-        + sa.vehicle_ref.astype(str) + "|"
-        + sa.trip_id.astype(str)
-    )
-
-    # Load trip directions from the GTFS Parquet files
-    trips = pd.read_parquet(
-        os.path.join(gtfs, "trips.parquet"),
-        columns=["trip_id", "direction_id"]
-    )
-    sa = sa.merge(trips, on="trip_id", how="left")
-
-    # Add stop names
-    stops = pd.read_parquet(
-        os.path.join(gtfs, "stops.parquet"),
-        columns=["stop_id", "stop_name"]
-    )
+    trips, stops = _gtfs_lookups(gtfs)
+    sa = sa.merge(trips, on="trip_id", how="left") if "direction_id" in trips \
+        else sa.assign(direction_id=None)
     sa = sa.merge(stops, on="stop_id", how="left")
     sa["stop_name"] = sa.stop_name.fillna(sa.stop_id)
 
-    # Find first and last stop sequences for each trip
-    wanted = set(sa.trip_id)
-
-    stop_times = pd.read_parquet(
-        os.path.join(gtfs, "stop_times.parquet"),
-        columns=["trip_id", "stop_sequence"]
-    )
-    stop_times = stop_times[stop_times.trip_id.isin(wanted)]
-
-    ends = stop_times.groupby("trip_id").stop_sequence.agg(["min", "max"])
+    ends = _trip_ends(gtfs, set(sa.trip_id))
     sa = sa.merge(ends, left_on="trip_id", right_index=True, how="left")
-
     sa["is_first_stop"] = (sa.stop_sequence == sa["min"]).astype(int)
     sa["is_last_stop"] = (sa.stop_sequence == sa["max"]).astype(int)
-
     return sa.drop(columns=["min", "max"])
 
 
-def load_stop_arrivals(path="delay_engine/trip_matching/out/stop_arrivals.parquet", gtfs="gtfs/"):
+def load_stop_arrivals(path="delay_engine/trip_matching/out/stop_arrivals.parquet", gtfs="data/"):
     """Load stop-by-stop delays and add per-arrival helper columns.
 
     Accepts either
@@ -200,31 +202,44 @@ def _rolling_median(events, key_cols, value_col, window=RECENT_WINDOW):
     return pd.concat(out, ignore_index=True).dropna(subset=["value"])
 
 
-def add_live_features(df, sa, ts_col="now_utc"):
-    """Attach recent-delay features as known at time ts_col (no peeking into the future).
+def live_tables(sa):
+    """Pre-compute the rolling "last 30 minutes" tables from stop arrivals ONCE.
 
-    recent_route_delay_s   median delay of all buses on this route+direction in the last 30 min
-    recent_added_delay_s   median delay ADDED per stop, across the whole corridor, last 30 min
-                           (a live "traffic is getting worse" signal)
-    """
+    Pass the result to add_live_features(..., tables=...) for every batch of pairs - recomputing
+    them per batch is what makes large runs crawl."""
     mid = sa[(sa.is_first_stop == 0) & (sa.is_last_stop == 0)]
 
-    # Route-level recent delay
+    # Route-level recent delay (per route + direction)
     rr = _rolling_median(mid, ["route_short_name", "direction_id"], "delay_s")
     rr = rr.rename(columns={"route_short_name": "route", "direction_id": "direction",
                             "value": "recent_route_delay_s"}).sort_values("actual_utc")
+
+    # Network-wide recent added delay (all routes together)
+    ca = mid.dropna(subset=["added_delay_s"]).set_index("actual_utc").added_delay_s.sort_index()
+    ca = ca.rolling(RECENT_WINDOW, closed="left").median().rename("recent_added_delay_s") \
+        .reset_index().dropna()
+    return rr, ca
+
+
+def add_live_features(df, sa=None, ts_col="now_utc", tables=None):
+    """Attach recent-delay features as known at time ts_col (no peeking into the future).
+
+    recent_route_delay_s   median delay of all buses on this route+direction in the last 30 min
+    recent_added_delay_s   median delay ADDED per stop across the network, last 30 min
+                           (a live "traffic is getting worse" signal)
+    Give either `sa` (stop arrivals; tables are computed here) or `tables` from live_tables(sa).
+    """
+    rr, ca = tables if tables is not None else live_tables(sa)
+    idx_name = "_row"
+    df = df.reset_index(drop=True)
+    df[idx_name] = np.arange(len(df))
     df = df.sort_values(ts_col)
     df = pd.merge_asof(df, rr, left_on=ts_col, right_on="actual_utc",
                        by=["route", "direction"], direction="backward",
                        tolerance=pd.Timedelta(RECENT_WINDOW)).drop(columns="actual_utc")
-
-    # Corridor-wide recent added delay (all routes together)
-    ca = mid.dropna(subset=["added_delay_s"]).set_index("actual_utc").added_delay_s.sort_index()
-    ca = ca.rolling(RECENT_WINDOW, closed="left").median().rename("recent_added_delay_s") \
-        .reset_index().dropna()
     df = pd.merge_asof(df, ca, left_on=ts_col, right_on="actual_utc", direction="backward",
                        tolerance=pd.Timedelta(RECENT_WINDOW)).drop(columns="actual_utc")
-    return df
+    return df.sort_values(idx_name).drop(columns=idx_name).reset_index(drop=True)
 
 
 # ------------------------------------------------------------------------------------------
