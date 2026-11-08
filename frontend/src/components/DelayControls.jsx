@@ -4,7 +4,7 @@ import { BAND_COLOUR } from '../services/delayApi';
 const hh = (h) => `${String(h).padStart(2, '0')}:00`;
 
 // Map corner button that turns the delay layer on/off, with a short explanation of what drives delays.
-export function LayersButton({ on, onToggle, data }) {
+export function LayersButton({ on, onToggle, data, worksOn, onToggleWorks }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="layers">
@@ -16,6 +16,14 @@ export function LayersButton({ on, onToggle, data }) {
             <span>
               <b>Typical bus delays</b>
               <small>How far behind timetable buses usually run</small>
+            </span>
+          </label>
+          <label className="layer-row">
+            <input type="checkbox" checked={worksOn} onChange={onToggleWorks} />
+            <span className="layer-swatch works" />
+            <span>
+              <b>Road works</b>
+              <small>Jobs on the road, sized by how much they slow buses</small>
             </span>
           </label>
           {on && data?.factors && (
@@ -31,7 +39,7 @@ export function LayersButton({ on, onToggle, data }) {
           )}
         </div>
       )}
-      <button className={`layers-btn ${on ? 'on' : ''}`} onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+      <button className={`layers-btn ${on || worksOn ? 'on' : ''}`} onClick={() => setOpen((o) => !o)} aria-expanded={open}>
         <span className="layers-icon" aria-hidden>◈</span>
         Layers
       </button>
@@ -81,27 +89,18 @@ export function DelayBar({ data, error, hour, setHour, dayType, setDayType }) {
   );
 }
 
-const COLOUR_BY = [['overall', 'Overall'], ['weather', 'Weather'], ['time_of_day', 'Time'], ['events', 'Events']];
 const tone = (m) => (m < 0.5 ? 'g' : m < 2 ? 'a' : 'r');
 
 // Side card while the delay layer is on (in explore mode): what to colour by, which factors to include,
 // and the worst stretches at the selected hour (click one to fly there).
-export function DelayInsightsCard({ data, colourBy, setColourBy, factors, toggleFactor, onFocusStretch }) {
+export function DelayInsightsCard({ data, factors, toggleFactor, onFocusStretch, children }) {
   const worst = (data?.segments ?? []).slice(0, 5);
   return (
+    <>
     <div className="sheet">
       <div className="sheet-head">
         <h2>What's slowing buses?</h2>
         <div className="muted small">Each hexagon shows how far behind timetable buses typically are there. Hover for details.</div>
-      </div>
-
-      <div className="block">
-        <div className="label">Colour by</div>
-        <div className="seg wide">
-          {COLOUR_BY.map(([id, name]) => (
-            <button key={id} className={colourBy === id ? 'on' : ''} onClick={() => setColourBy(id)}>{name}</button>
-          ))}
-        </div>
       </div>
 
       {data?.factors && (
@@ -144,5 +143,7 @@ export function DelayInsightsCard({ data, colourBy, setColourBy, factors, toggle
         </div>
       )}
     </div>
+    {children}
+    </>
   );
 }

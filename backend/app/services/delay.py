@@ -106,6 +106,165 @@ def segments_hexed(hex_m):
     return s
 
 
+# ---------- road works (delay_engine/export_roadworks.py) ----------
+
+ROADWORKS_RADIUS_M = 75  # same radius roadworks_flag.py used to link works to bus stretches
+
+
+@lru_cache(maxsize=1)
+def roadworks():
+    p = DATA / "roadworks.parquet"
+    if not p.exists():
+        return None
+    w = pd.read_parquet(p)
+    w["effect_base_s"] = w.measured_s.fillna(w.expected_s).fillna(0.0)
+    return w
+
+
+@lru_cache(maxsize=1)
+def roadworks_effects():
+    p = DATA / "roadworks_effects.json"
+    return json.loads(p.read_text()) if p.exists() else {}
+
+
+def roadworks_hour_scale(hour, weekend):
+    """How much bigger/smaller the works penalty is at this hour than on average (roadworks_by_hour.csv):
+    weekday 16:00-17:00 ~1.4x, late evening ~0.4x."""
+    rows = roadworks_effects().get("roadworks_by_hour") or []
+    same = [r for r in rows if int(r["is_weekend"]) == int(weekend)]
+    if not same:
+        return 1.0
+    tot_n = sum(r["blocking_works_n"] for r in same)
+    avg = sum(r["penalty_s"] * r["blocking_works_n"] for r in same) / tot_n if tot_n else 0
+    here = next((r["penalty_s"] for r in same if int(r["hour"]) == hour), None)
+    if not avg or here is None:
+        return 1.0
+    return max(0.0, here / avg)
+
+
+def roadworks_concurrent_s(count):
+    """Extra delay per stretch with this many works at once (by_number_of_works minus no works)."""
+    eff = roadworks_effects()
+    none = next((r["mean_excess_s"] for r in eff.get("by_traffic_management", []) if r["tm"] == "none"), 0)
+    rows = {str(r["concurrent"]): r["mean_excess_s"] for r in eff.get("by_number_of_works", [])}
+    v = rows.get("3+" if count >= 3 else str(count))
+    return max(0.0, v - none) if v is not None else 0.0
+
+
+def roadworks_active(when_utc):
+    """Works on at this moment (pandas Timestamp, UTC)."""
+    w = roadworks()
+    if w is None:
+        return None
+    return w[(w.start <= when_utc) & (w.end >= when_utc)]
+
+
+def roadwork_out(r, scale):
+    measured = not pd.isna(r.measured_s)
+    return {
+        "id": r.permit_reference_number, "lat": float(r.lat), "lon": float(r.lon),
+        "street": str(r.street_name).title(), "town": str(r.town).title(),
+        "traffic_management": r.traffic_management_type, "category": r.work_category, "status": r.status,
+        "start": r.start.strftime("%Y-%m-%d"), "end": r.end.strftime("%Y-%m-%d"),
+        "effect_s": round(float(r.effect_base_s) * scale, 1), "measured": measured,
+        "measured_n": None if pd.isna(r.measured_n) else int(r.measured_n),
+    }
+
+
+def get_roadworks(day, hour, bbox=None):
+    """Works on at `hour` on `day` (local), each with the extra delay per bus stretch to expect at that hour."""
+    w = roadworks()
+    if w is None:
+        raise DelayDataMissing("roadworks.parquet not found. Run delay_engine/export_roadworks.py.")
+    when = pd.Timestamp(day).tz_localize(LONDON) + pd.Timedelta(hours=hour, minutes=30)
+    act = roadworks_active(when.tz_convert("UTC"))
+    if bbox is not None:
+        lat0, lon0, lat1, lon1 = bbox
+        act = act[act.lat.between(lat0, lat1) & act.lon.between(lon0, lon1)]
+    weekend = pd.Timestamp(day).weekday() >= 5
+    scale = roadworks_hour_scale(hour, weekend)
+    eff = roadworks_effects()
+    none = next((r["mean_excess_s"] for r in eff.get("by_traffic_management", []) if r["tm"] == "none"), 0)
+    by_type = sorted(({"traffic_management": r["tm"], "extra_s": round(r["mean_excess_s"] - none, 1), "n": r["n"]}
+                      for r in eff.get("by_traffic_management", []) if r["tm"] != "none" and r["n"] >= 1000),
+                     key=lambda x: -x["extra_s"])
+    return {
+        "date": str(day), "hour": hour, "hour_scale": round(scale, 2),
+        "permits_until": eff.get("permits_until"),
+        "works": [roadwork_out(r, scale) for r in act.itertuples(index=False)],
+        "summary": {
+            "by_type": by_type,
+            "concurrent": [{"works": str(r["concurrent"]), "extra_s": round(r["mean_excess_s"] - none, 1)}
+                           for r in eff.get("by_number_of_works", [])],
+            "distance": [{"distance_m": r["distance_m"], "extra_s": round(r["mean_excess_s"] - none, 1)}
+                         for r in eff.get("by_distance_to_works", [])],
+            "peak": max((r for r in eff.get("roadworks_by_hour", []) if int(r["is_weekend"]) == 0),
+                        key=lambda r: r["penalty_s"], default=None),
+        },
+    }
+
+
+@lru_cache(maxsize=1)
+def stop_typical_table():
+    p = DATA / "stop_typical.parquet"
+    if not p.exists():
+        return None
+    return pd.read_parquet(p).set_index(["stop_id", "is_weekend", "hour"]).sort_index()
+
+
+@lru_cache(maxsize=1)
+def route_band_medians():
+    """{(route_id, band): median delay s} from route_reliability_by_band.csv (first stops excluded)."""
+    p = DATA / "route_reliability_by_band.csv"
+    if not p.exists():
+        return {}
+    r = pd.read_csv(p, dtype={"route_id": str})
+    return {(x.route_id, x.band): float(x.median_delay_s) for x in r.itertuples(index=False)}
+
+
+def reliability_band(hour, weekend):
+    """Same time bands as delay_engine/archival_data/route_reliability.py."""
+    if weekend:
+        return "weekend"
+    if hour in (7, 8):
+        return "AM peak (07-09)"
+    if 9 <= hour < 16:
+        return "midday (09-16)"
+    if hour in (16, 17):
+        return "PM peak (16-18)"
+    return "evening/early"
+
+
+def expected_conditions(stop_id, route_id, hour, weekend):
+    """Best estimate, for a trip in the future, of what the delay model is normally told live:
+      delay_now_s           how late the bus is when it reaches the boarding stop
+                            -> typical lateness of buses arriving at that stop at that hour/day type
+                               (on held-out days: 18% lower error than assuming it's on time)
+      recent_route_delay_s  median delay on this route lately -> the route's median for this time band
+      recent_added_delay_s  median delay gained per stop network-wide lately -> typical for this hour
+    Each falls back to NaN (the model treats it as unknown) if there's no data."""
+    out = {"delay_now_s": float("nan"), "recent_route_delay_s": float("nan"),
+           "recent_added_delay_s": float("nan"), "delay_now_basis": None}
+    st = stop_typical_table()
+    if st is not None and (stop_id, int(weekend), hour) in st.index:
+        out["delay_now_s"] = float(st.loc[(stop_id, int(weekend), hour)].late_med_s)
+        out["delay_now_basis"] = "stop"
+    else:
+        net = network()
+        row = net[(net.is_weekend == int(weekend)) & (net.hour == hour)]
+        if len(row):  # network average for that hour: better than assuming on time
+            out["delay_now_s"] = float(row.iloc[0].avg_delay_min * 60)
+            out["delay_now_basis"] = "network"
+    med = route_band_medians().get((str(route_id), reliability_band(hour, weekend)))
+    if med is not None:
+        out["recent_route_delay_s"] = med
+    net = network()
+    row = net[(net.is_weekend == int(weekend)) & (net.hour == hour)]
+    if len(row) and "added_med_s" in row:
+        out["recent_added_delay_s"] = float(row.iloc[0].added_med_s)
+    return out
+
+
 @lru_cache(maxsize=1)
 def network():
     return pd.read_parquet(_path("network_hourly.parquet"))

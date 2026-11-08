@@ -72,6 +72,22 @@ def typical_delay(from_id: str, to_id: str, hour: int | None = Query(None, ge=0,
     return out
 
 
+@router.get("/roadworks")
+def roadworks(
+    day: str | None = Query(None, alias="date", description="YYYY-MM-DD, default today"),
+    hour: int | None = Query(None, ge=0, le=23),
+    bbox: str | None = Query(None, description="min_lat,min_lon,max_lat,max_lon"),
+):
+    """Road works on at that date/hour, with the extra delay per bus stretch to expect (measured for works the
+    analysis saw, else typical for the traffic-management type), and the analysis summary."""
+    from datetime import date as _date
+    try:
+        d = _date.fromisoformat(day) if day else delay.now().date()
+    except ValueError:
+        raise HTTPException(status_code=422, detail="date must be YYYY-MM-DD")
+    return _data(delay.get_roadworks, d, _hour(hour), _bbox(bbox))
+
+
 @router.get("/late-buses")
 def late_buses():
     """Buses running late at one moment and why (current_delays.py output; a replayed past moment, see as_of_utc)."""

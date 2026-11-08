@@ -3,6 +3,7 @@ import { Polyline, Marker, Tooltip, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { BAND_COLOUR } from '../services/delayApi';
 import { journeyKey, journeyPath, lineList } from './routeRanking';
+import { RoadworksLayer } from './Roadworks';
 
 const RELIABLE = '#2d55d4';
 const FASTEST = '#d9534f';
@@ -106,6 +107,7 @@ export function RouteOverlay({ routes, selected }) {
         <PlainRoute journey={alt} colour={alt._tag === 'fastest' ? FASTEST : RELIABLE} dashed={alt._tag === 'fastest'} faded />
       )}
       <DelayRoute journey={sel} />
+      {sel.insight?.roadworks?.length > 0 && <RoadworksLayer data={{ works: sel.insight.roadworks }} />}
       {worst && (
         <Marker
           position={mid(worst.path)}

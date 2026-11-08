@@ -1,0 +1,689 @@
+{
+ "permits_until": "2026-10-31 23:08:10.812000+00:00",
+ "blocking_vs_other": [
+  {
+   "blocking": "none",
+   "n": 10563335,
+   "mean_excess_s": 4.3,
+   "median_excess_s": 0.0,
+   "share_over_60s": 4.8,
+   "ci95_s": 0.0
+  },
+  {
+   "blocking": "other works",
+   "n": 1408828,
+   "mean_excess_s": 4.8,
+   "median_excess_s": 0.1,
+   "share_over_60s": 5.6,
+   "ci95_s": 0.1
+  },
+  {
+   "blocking": "signals/lane/closure",
+   "n": 1172288,
+   "mean_excess_s": 11.0,
+   "median_excess_s": 2.5,
+   "share_over_60s": 9.3,
+   "ci95_s": 0.1
+  }
+ ],
+ "by_traffic_management": [
+  {
+   "tm": "Contra-flow",
+   "n": 38756,
+   "mean_excess_s": 2.4,
+   "median_excess_s": 0.8,
+   "share_over_60s": 1.3,
+   "ci95_s": 0.2
+  },
+  {
+   "tm": "Convoy workings",
+   "n": 284,
+   "mean_excess_s": 11.5,
+   "median_excess_s": 1.8,
+   "share_over_60s": 7.4,
+   "ci95_s": 4.3
+  },
+  {
+   "tm": "Give and take",
+   "n": 308835,
+   "mean_excess_s": 4.6,
+   "median_excess_s": 0.2,
+   "share_over_60s": 4.9,
+   "ci95_s": 0.1
+  },
+  {
+   "tm": "Lane closure",
+   "n": 269749,
+   "mean_excess_s": 6.7,
+   "median_excess_s": 0.8,
+   "share_over_60s": 6.9,
+   "ci95_s": 0.2
+  },
+  {
+   "tm": "Multi-way signals",
+   "n": 199194,
+   "mean_excess_s": 23.4,
+   "median_excess_s": 7.4,
+   "share_over_60s": 16.5,
+   "ci95_s": 0.3
+  },
+  {
+   "tm": "Priority working",
+   "n": 1031,
+   "mean_excess_s": 7.4,
+   "median_excess_s": 1.9,
+   "share_over_60s": 5.8,
+   "ci95_s": 2.5
+  },
+  {
+   "tm": "Road closure",
+   "n": 467558,
+   "mean_excess_s": 9.3,
+   "median_excess_s": 1.7,
+   "share_over_60s": 8.6,
+   "ci95_s": 0.1
+  },
+  {
+   "tm": "Some carriageway incursion",
+   "n": 1098678,
+   "mean_excess_s": 4.8,
+   "median_excess_s": 0.0,
+   "share_over_60s": 5.7,
+   "ci95_s": 0.1
+  },
+  {
+   "tm": "Stop/go boards",
+   "n": 26890,
+   "mean_excess_s": 3.6,
+   "median_excess_s": -0.2,
+   "share_over_60s": 6.2,
+   "ci95_s": 0.5
+  },
+  {
+   "tm": "Temp obstruction 15 minute delay",
+   "n": 3442,
+   "mean_excess_s": 8.3,
+   "median_excess_s": 2.2,
+   "share_over_60s": 8.3,
+   "ci95_s": 1.6
+  },
+  {
+   "tm": "Two-way signals",
+   "n": 166699,
+   "mean_excess_s": 11.2,
+   "median_excess_s": 3.7,
+   "share_over_60s": 8.8,
+   "ci95_s": 0.2
+  },
+  {
+   "tm": "none",
+   "n": 10563335,
+   "mean_excess_s": 4.3,
+   "median_excess_s": 0.0,
+   "share_over_60s": 4.8,
+   "ci95_s": 0.0
+  }
+ ],
+ "by_number_of_works": [
+  {
+   "concurrent": "1",
+   "n": 2134717,
+   "mean_excess_s": 6.6,
+   "median_excess_s": 0.8,
+   "share_over_60s": 6.7,
+   "ci95_s": 0.1
+  },
+  {
+   "concurrent": "2",
+   "n": 342822,
+   "mean_excess_s": 10.9,
+   "median_excess_s": 2.2,
+   "share_over_60s": 9.2,
+   "ci95_s": 0.2
+  },
+  {
+   "concurrent": "3+",
+   "n": 103577,
+   "mean_excess_s": 16.4,
+   "median_excess_s": 4.1,
+   "share_over_60s": 12.7,
+   "ci95_s": 0.3
+  }
+ ],
+ "by_distance_to_works": [
+  {
+   "distance_m": "<25",
+   "n": 1078059,
+   "mean_excess_s": 9.7,
+   "median_excess_s": 1.8,
+   "share_over_60s": 8.3,
+   "ci95_s": 0.1
+  },
+  {
+   "distance_m": "25-50",
+   "n": 703334,
+   "mean_excess_s": 6.4,
+   "median_excess_s": 0.7,
+   "share_over_60s": 6.4,
+   "ci95_s": 0.1
+  },
+  {
+   "distance_m": "50+",
+   "n": 799723,
+   "mean_excess_s": 5.9,
+   "median_excess_s": 0.5,
+   "share_over_60s": 6.6,
+   "ci95_s": 0.1
+  }
+ ],
+ "by_work_category": [
+  {
+   "cat": "Immediate - emergency",
+   "n": 389602,
+   "mean_excess_s": 6.1,
+   "median_excess_s": 0.6,
+   "share_over_60s": 6.0,
+   "ci95_s": 0.1
+  },
+  {
+   "cat": "Immediate - urgent",
+   "n": 791875,
+   "mean_excess_s": 6.1,
+   "median_excess_s": 0.4,
+   "share_over_60s": 6.3,
+   "ci95_s": 0.1
+  },
+  {
+   "cat": "Major",
+   "n": 584082,
+   "mean_excess_s": 11.8,
+   "median_excess_s": 3.0,
+   "share_over_60s": 10.3,
+   "ci95_s": 0.1
+  },
+  {
+   "cat": "Minor",
+   "n": 383495,
+   "mean_excess_s": 6.9,
+   "median_excess_s": 0.8,
+   "share_over_60s": 6.4,
+   "ci95_s": 0.1
+  },
+  {
+   "cat": "Standard",
+   "n": 432062,
+   "mean_excess_s": 6.6,
+   "median_excess_s": 0.9,
+   "share_over_60s": 6.6,
+   "ci95_s": 0.1
+  },
+  {
+   "cat": "none",
+   "n": 10563335,
+   "mean_excess_s": 4.3,
+   "median_excess_s": 0.0,
+   "share_over_60s": 4.8,
+   "ci95_s": 0.0
+  }
+ ],
+ "roadworks_by_hour": [
+  {
+   "is_weekend": 0,
+   "hour": 0,
+   "blocking_works_n": 5208,
+   "none_n": 53046,
+   "blocking_works_mean_excess_s": 5.7,
+   "none_mean_excess_s": 2.9,
+   "blocking_works_share_over_60s": 0.0,
+   "none_share_over_60s": 0.0,
+   "penalty_s": 2.8
+  },
+  {
+   "is_weekend": 0,
+   "hour": 4,
+   "blocking_works_n": 2253,
+   "none_n": 21555,
+   "blocking_works_mean_excess_s": 6.6,
+   "none_mean_excess_s": 2.4,
+   "blocking_works_share_over_60s": 0.0,
+   "none_share_over_60s": 0.0,
+   "penalty_s": 4.2
+  },
+  {
+   "is_weekend": 0,
+   "hour": 5,
+   "blocking_works_n": 16044,
+   "none_n": 142683,
+   "blocking_works_mean_excess_s": 3.9,
+   "none_mean_excess_s": 2.4,
+   "blocking_works_share_over_60s": 0.0,
+   "none_share_over_60s": 0.0,
+   "penalty_s": 1.5
+  },
+  {
+   "is_weekend": 0,
+   "hour": 6,
+   "blocking_works_n": 39698,
+   "none_n": 361565,
+   "blocking_works_mean_excess_s": 5.0,
+   "none_mean_excess_s": 2.6,
+   "blocking_works_share_over_60s": 0.0,
+   "none_share_over_60s": 0.0,
+   "penalty_s": 2.4
+  },
+  {
+   "is_weekend": 0,
+   "hour": 7,
+   "blocking_works_n": 64530,
+   "none_n": 599242,
+   "blocking_works_mean_excess_s": 9.3,
+   "none_mean_excess_s": 4.0,
+   "blocking_works_share_over_60s": 0.1,
+   "none_share_over_60s": 0.1,
+   "penalty_s": 5.3
+  },
+  {
+   "is_weekend": 0,
+   "hour": 8,
+   "blocking_works_n": 67843,
+   "none_n": 619590,
+   "blocking_works_mean_excess_s": 14.4,
+   "none_mean_excess_s": 6.3,
+   "blocking_works_share_over_60s": 0.1,
+   "none_share_over_60s": 0.1,
+   "penalty_s": 8.1
+  },
+  {
+   "is_weekend": 0,
+   "hour": 9,
+   "blocking_works_n": 70950,
+   "none_n": 612873,
+   "blocking_works_mean_excess_s": 13.0,
+   "none_mean_excess_s": 4.7,
+   "blocking_works_share_over_60s": 0.1,
+   "none_share_over_60s": 0.1,
+   "penalty_s": 8.3
+  },
+  {
+   "is_weekend": 0,
+   "hour": 10,
+   "blocking_works_n": 68010,
+   "none_n": 587065,
+   "blocking_works_mean_excess_s": 10.9,
+   "none_mean_excess_s": 3.9,
+   "blocking_works_share_over_60s": 0.1,
+   "none_share_over_60s": 0.0,
+   "penalty_s": 6.9
+  },
+  {
+   "is_weekend": 0,
+   "hour": 11,
+   "blocking_works_n": 67496,
+   "none_n": 576692,
+   "blocking_works_mean_excess_s": 10.7,
+   "none_mean_excess_s": 3.8,
+   "blocking_works_share_over_60s": 0.1,
+   "none_share_over_60s": 0.0,
+   "penalty_s": 6.9
+  },
+  {
+   "is_weekend": 0,
+   "hour": 12,
+   "blocking_works_n": 66340,
+   "none_n": 568491,
+   "blocking_works_mean_excess_s": 11.8,
+   "none_mean_excess_s": 4.1,
+   "blocking_works_share_over_60s": 0.1,
+   "none_share_over_60s": 0.0,
+   "penalty_s": 7.7
+  },
+  {
+   "is_weekend": 0,
+   "hour": 13,
+   "blocking_works_n": 67069,
+   "none_n": 572733,
+   "blocking_works_mean_excess_s": 12.0,
+   "none_mean_excess_s": 4.1,
+   "blocking_works_share_over_60s": 0.1,
+   "none_share_over_60s": 0.0,
+   "penalty_s": 7.9
+  },
+  {
+   "is_weekend": 0,
+   "hour": 14,
+   "blocking_works_n": 65606,
+   "none_n": 564408,
+   "blocking_works_mean_excess_s": 13.0,
+   "none_mean_excess_s": 4.2,
+   "blocking_works_share_over_60s": 0.1,
+   "none_share_over_60s": 0.0,
+   "penalty_s": 8.8
+  },
+  {
+   "is_weekend": 0,
+   "hour": 15,
+   "blocking_works_n": 67843,
+   "none_n": 618174,
+   "blocking_works_mean_excess_s": 14.0,
+   "none_mean_excess_s": 5.5,
+   "blocking_works_share_over_60s": 0.1,
+   "none_share_over_60s": 0.1,
+   "penalty_s": 8.4
+  },
+  {
+   "is_weekend": 0,
+   "hour": 16,
+   "blocking_works_n": 67495,
+   "none_n": 611053,
+   "blocking_works_mean_excess_s": 15.9,
+   "none_mean_excess_s": 6.0,
+   "blocking_works_share_over_60s": 0.1,
+   "none_share_over_60s": 0.1,
+   "penalty_s": 9.9
+  },
+  {
+   "is_weekend": 0,
+   "hour": 17,
+   "blocking_works_n": 63081,
+   "none_n": 584838,
+   "blocking_works_mean_excess_s": 15.3,
+   "none_mean_excess_s": 6.0,
+   "blocking_works_share_over_60s": 0.1,
+   "none_share_over_60s": 0.1,
+   "penalty_s": 9.4
+  },
+  {
+   "is_weekend": 0,
+   "hour": 18,
+   "blocking_works_n": 63846,
+   "none_n": 561642,
+   "blocking_works_mean_excess_s": 12.6,
+   "none_mean_excess_s": 4.5,
+   "blocking_works_share_over_60s": 0.1,
+   "none_share_over_60s": 0.1,
+   "penalty_s": 8.1
+  },
+  {
+   "is_weekend": 0,
+   "hour": 19,
+   "blocking_works_n": 46760,
+   "none_n": 415022,
+   "blocking_works_mean_excess_s": 9.5,
+   "none_mean_excess_s": 3.5,
+   "blocking_works_share_over_60s": 0.1,
+   "none_share_over_60s": 0.0,
+   "penalty_s": 6.1
+  },
+  {
+   "is_weekend": 0,
+   "hour": 20,
+   "blocking_works_n": 32210,
+   "none_n": 284541,
+   "blocking_works_mean_excess_s": 6.3,
+   "none_mean_excess_s": 2.8,
+   "blocking_works_share_over_60s": 0.0,
+   "none_share_over_60s": 0.0,
+   "penalty_s": 3.5
+  },
+  {
+   "is_weekend": 0,
+   "hour": 21,
+   "blocking_works_n": 25771,
+   "none_n": 231598,
+   "blocking_works_mean_excess_s": 6.5,
+   "none_mean_excess_s": 3.0,
+   "blocking_works_share_over_60s": 0.0,
+   "none_share_over_60s": 0.0,
+   "penalty_s": 3.5
+  },
+  {
+   "is_weekend": 0,
+   "hour": 22,
+   "blocking_works_n": 23030,
+   "none_n": 211615,
+   "blocking_works_mean_excess_s": 5.8,
+   "none_mean_excess_s": 3.0,
+   "blocking_works_share_over_60s": 0.0,
+   "none_share_over_60s": 0.0,
+   "penalty_s": 2.8
+  },
+  {
+   "is_weekend": 0,
+   "hour": 23,
+   "blocking_works_n": 18348,
+   "none_n": 165163,
+   "blocking_works_mean_excess_s": 5.0,
+   "none_mean_excess_s": 3.0,
+   "blocking_works_share_over_60s": 0.0,
+   "none_share_over_60s": 0.0,
+   "penalty_s": 2.0
+  },
+  {
+   "is_weekend": 1,
+   "hour": 0,
+   "blocking_works_n": 887,
+   "none_n": 9768,
+   "blocking_works_mean_excess_s": 2.4,
+   "none_mean_excess_s": 2.8,
+   "blocking_works_share_over_60s": 0.0,
+   "none_share_over_60s": 0.0,
+   "penalty_s": -0.4
+  },
+  {
+   "is_weekend": 1,
+   "hour": 6,
+   "blocking_works_n": 1547,
+   "none_n": 17455,
+   "blocking_works_mean_excess_s": 2.9,
+   "none_mean_excess_s": 2.6,
+   "blocking_works_share_over_60s": 0.0,
+   "none_share_over_60s": 0.0,
+   "penalty_s": 0.3
+  },
+  {
+   "is_weekend": 1,
+   "hour": 7,
+   "blocking_works_n": 3595,
+   "none_n": 39946,
+   "blocking_works_mean_excess_s": 1.6,
+   "none_mean_excess_s": 2.4,
+   "blocking_works_share_over_60s": 0.0,
+   "none_share_over_60s": 0.0,
+   "penalty_s": -0.8
+  },
+  {
+   "is_weekend": 1,
+   "hour": 8,
+   "blocking_works_n": 6239,
+   "none_n": 69188,
+   "blocking_works_mean_excess_s": 4.7,
+   "none_mean_excess_s": 2.7,
+   "blocking_works_share_over_60s": 0.0,
+   "none_share_over_60s": 0.0,
+   "penalty_s": 2.0
+  },
+  {
+   "is_weekend": 1,
+   "hour": 9,
+   "blocking_works_n": 8895,
+   "none_n": 95451,
+   "blocking_works_mean_excess_s": 5.7,
+   "none_mean_excess_s": 2.9,
+   "blocking_works_share_over_60s": 0.1,
+   "none_share_over_60s": 0.0,
+   "penalty_s": 2.7
+  },
+  {
+   "is_weekend": 1,
+   "hour": 10,
+   "blocking_works_n": 11909,
+   "none_n": 118286,
+   "blocking_works_mean_excess_s": 8.0,
+   "none_mean_excess_s": 3.3,
+   "blocking_works_share_over_60s": 0.1,
+   "none_share_over_60s": 0.0,
+   "penalty_s": 4.7
+  },
+  {
+   "is_weekend": 1,
+   "hour": 11,
+   "blocking_works_n": 12913,
+   "none_n": 125385,
+   "blocking_works_mean_excess_s": 11.3,
+   "none_mean_excess_s": 3.9,
+   "blocking_works_share_over_60s": 0.1,
+   "none_share_over_60s": 0.0,
+   "penalty_s": 7.4
+  },
+  {
+   "is_weekend": 1,
+   "hour": 12,
+   "blocking_works_n": 12937,
+   "none_n": 126911,
+   "blocking_works_mean_excess_s": 12.2,
+   "none_mean_excess_s": 4.2,
+   "blocking_works_share_over_60s": 0.1,
+   "none_share_over_60s": 0.1,
+   "penalty_s": 8.0
+  },
+  {
+   "is_weekend": 1,
+   "hour": 13,
+   "blocking_works_n": 13172,
+   "none_n": 127914,
+   "blocking_works_mean_excess_s": 12.2,
+   "none_mean_excess_s": 4.2,
+   "blocking_works_share_over_60s": 0.1,
+   "none_share_over_60s": 0.1,
+   "penalty_s": 8.0
+  },
+  {
+   "is_weekend": 1,
+   "hour": 14,
+   "blocking_works_n": 13608,
+   "none_n": 129829,
+   "blocking_works_mean_excess_s": 10.5,
+   "none_mean_excess_s": 4.1,
+   "blocking_works_share_over_60s": 0.1,
+   "none_share_over_60s": 0.1,
+   "penalty_s": 6.5
+  },
+  {
+   "is_weekend": 1,
+   "hour": 15,
+   "blocking_works_n": 13607,
+   "none_n": 130003,
+   "blocking_works_mean_excess_s": 8.3,
+   "none_mean_excess_s": 3.8,
+   "blocking_works_share_over_60s": 0.1,
+   "none_share_over_60s": 0.0,
+   "penalty_s": 4.6
+  },
+  {
+   "is_weekend": 1,
+   "hour": 16,
+   "blocking_works_n": 13275,
+   "none_n": 127276,
+   "blocking_works_mean_excess_s": 8.3,
+   "none_mean_excess_s": 3.8,
+   "blocking_works_share_over_60s": 0.1,
+   "none_share_over_60s": 0.0,
+   "penalty_s": 4.5
+  },
+  {
+   "is_weekend": 1,
+   "hour": 17,
+   "blocking_works_n": 12581,
+   "none_n": 118512,
+   "blocking_works_mean_excess_s": 7.6,
+   "none_mean_excess_s": 3.8,
+   "blocking_works_share_over_60s": 0.1,
+   "none_share_over_60s": 0.0,
+   "penalty_s": 3.8
+  },
+  {
+   "is_weekend": 1,
+   "hour": 18,
+   "blocking_works_n": 10736,
+   "none_n": 99227,
+   "blocking_works_mean_excess_s": 7.6,
+   "none_mean_excess_s": 3.4,
+   "blocking_works_share_over_60s": 0.1,
+   "none_share_over_60s": 0.0,
+   "penalty_s": 4.2
+  },
+  {
+   "is_weekend": 1,
+   "hour": 19,
+   "blocking_works_n": 8111,
+   "none_n": 74849,
+   "blocking_works_mean_excess_s": 7.1,
+   "none_mean_excess_s": 3.4,
+   "blocking_works_share_over_60s": 0.1,
+   "none_share_over_60s": 0.0,
+   "penalty_s": 3.7
+  },
+  {
+   "is_weekend": 1,
+   "hour": 20,
+   "blocking_works_n": 6071,
+   "none_n": 59047,
+   "blocking_works_mean_excess_s": 5.2,
+   "none_mean_excess_s": 2.8,
+   "blocking_works_share_over_60s": 0.1,
+   "none_share_over_60s": 0.0,
+   "penalty_s": 2.4
+  },
+  {
+   "is_weekend": 1,
+   "hour": 21,
+   "blocking_works_n": 5042,
+   "none_n": 49695,
+   "blocking_works_mean_excess_s": 4.5,
+   "none_mean_excess_s": 3.1,
+   "blocking_works_share_over_60s": 0.0,
+   "none_share_over_60s": 0.0,
+   "penalty_s": 1.4
+  },
+  {
+   "is_weekend": 1,
+   "hour": 22,
+   "blocking_works_n": 3991,
+   "none_n": 40692,
+   "blocking_works_mean_excess_s": 4.9,
+   "none_mean_excess_s": 3.1,
+   "blocking_works_share_over_60s": 0.0,
+   "none_share_over_60s": 0.0,
+   "penalty_s": 1.8
+  },
+  {
+   "is_weekend": 1,
+   "hour": 23,
+   "blocking_works_n": 3109,
+   "none_n": 31505,
+   "blocking_works_mean_excess_s": 4.8,
+   "none_mean_excess_s": 3.5,
+   "blocking_works_share_over_60s": 0.0,
+   "none_share_over_60s": 0.0,
+   "penalty_s": 1.4
+  }
+ ],
+ "works_vs_none": [
+  {
+   "works": "none",
+   "n": 10563335,
+   "mean_excess_s": 4.3,
+   "median_excess_s": 0.0,
+   "share_over_60s": 4.8,
+   "ci95_s": 0.0
+  },
+  {
+   "works": "road works",
+   "n": 2581116,
+   "mean_excess_s": 7.6,
+   "median_excess_s": 1.1,
+   "share_over_60s": 7.2,
+   "ci95_s": 0.1
+  }
+ ]
+}

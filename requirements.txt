@@ -14,3 +14,5 @@ duckdb
 # roadworks analysis (delay_engine/archival_data/filter_roadworks.py, roadworks_flag.py)
 pyproj
 scipy
+# delay model (delay_engine/model, loaded by backend/app/services/prediction.py)
+lightgbm

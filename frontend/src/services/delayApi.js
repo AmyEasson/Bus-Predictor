@@ -32,3 +32,11 @@ export async function fetchDelayMap({ hour, colourBy = 'overall', factors, dayTy
     throw new Error(`Delay map request failed (${error.response?.status ?? error.message})`);
   }
 }
+// Road works on at that date/hour, each with the extra delay per bus stretch to expect, plus the analysis summary
+export async function fetchRoadworks({ date, hour } = {}) {
+  const params = {};
+  if (date) params.date = date;
+  if (hour != null) params.hour = hour;
+  const res = await axios.get(`${API_BASE_URL}/api/roadworks`, { params });
+  return res.data;
+}

@@ -21,6 +21,8 @@ const addMin = (t, m) => {
 };
 const RISK_TEXT = { low: 'Low', medium: 'Medium', high: 'High' };
 const RISK_CHIP = { low: 'green', medium: 'amber', high: 'red' };
+const RISK_HELP = 'Delay risk: how late you could be on a bad day (the worst 1 trip in 10). '
+  + 'Low: under 5 min late. Medium: 5 to 10 min. High: over 10 min.';
 const tone = (m) => (m == null ? '' : m < 2 ? 'g' : m < 5 ? 'a' : 'r');
 
 function Lines({ journey }) {
@@ -42,16 +44,20 @@ function Tag({ journey }) {
 }
 
 function RiskMeter({ journey }) {
-  const { pct, level } = riskOf(journey);
+  const { pct, level, source, p90 } = riskOf(journey);
   if (!level) return null;
+  // meter: the model's bad-day delay on a 0-15 min scale, or the historical late share
+  const fill = source === 'model' ? Math.min(100, (p90 / 15) * 100) : pct;
   return (
     <div className="risk">
       <div className="risk-head">
-        <span className="muted small">Delay risk</span>
-        <span className={`chip ${RISK_CHIP[level]}`}>{RISK_TEXT[level]}{pct != null ? ` · ${pct}%` : ''}</span>
+        <span className="muted small help" title={RISK_HELP}>Delay risk ⓘ</span>
+        <span className={`chip ${RISK_CHIP[level]}`} title={RISK_HELP}>{RISK_TEXT[level]}{source === 'history' ? ` · ${pct}%` : ''}</span>
+        {source === 'model' && <span className="muted small">bad day: +{p90.toFixed(1)} min</span>}
       </div>
-      {pct != null && (
-        <div className="meter"><i style={{ width: `${Math.max(3, pct)}%`, background: `var(--${RISK_CHIP[level]})` }} /></div>
+      <div className="meter"><i style={{ width: `${Math.max(3, fill)}%`, background: `var(--${RISK_CHIP[level]})` }} /></div>
+      {source === 'model' && pct != null && (
+        <span className="muted small">In past data, {pct}% of these buses ran 5+ min late at this time</span>
       )}
     </div>
   );
@@ -76,7 +82,7 @@ function Duration({ journey, big = true }) {
   );
 }
 
-function RouteCard({ journey, onSelect, onShowDelays }) {
+function RouteCard({ journey, onSelect }) {
   const { minutes } = expectedDelay(journey);
   const arrive = addMin(hhmm(journey.arrival_time), Math.max(0, minutes ?? 0));
   return (
@@ -100,7 +106,6 @@ function RouteCard({ journey, onSelect, onShowDelays }) {
         {journey.prediction?.connection_at_risk && <span className="tag-warn">Connection at risk</span>}
         <div className="rc-foot">
           <button className="link" onClick={(e) => { e.stopPropagation(); onSelect(); }}>Route details →</button>
-          <button className="link" onClick={(e) => { e.stopPropagation(); onSelect(); onShowDelays(); }}>View on delay map →</button>
         </div>
       </div>
     </li>
@@ -117,13 +122,13 @@ function FastVsSafe({ routes, selected, onSelect }) {
       <div className="label">Fast vs safe</div>
       <div className="vs">
         {[fastest, reliable].map((j) => {
-          const { level, pct } = riskOf(j);
+          const { level, pct, source } = riskOf(j);
           const on = journeyKey(j) === journeyKey(selected);
           return (
             <button key={journeyKey(j)} className={`vs-card ${on ? 'on' : ''}`} onClick={() => onSelect(j)}>
               <span className={`vs-label ${j._tag}`}>{LABELS[j._tag].text}</span>
               <Duration journey={j} big={false} />
-              {level && <span className={`chip ${RISK_CHIP[level]}`}>Risk {RISK_TEXT[level]}{pct != null ? ` · ${pct}%` : ''}</span>}
+              {level && <span className={`chip ${RISK_CHIP[level]}`}>Risk {RISK_TEXT[level]}{source === 'history' && pct != null ? ` · ${pct}%` : ''}</span>}
             </button>
           );
         })}
@@ -132,7 +137,7 @@ function FastVsSafe({ routes, selected, onSelect }) {
   );
 }
 
-const FACTOR_COLOUR = { time_of_day: 'var(--amber)', weather: '#3b82c4', events: 'var(--red)' };
+const FACTOR_COLOUR = { time_of_day: 'var(--amber)', weather: '#3b82c4', events: 'var(--red)', roadworks: '#e8710a' };
 
 function WhyPanel({ journey }) {
   const ins = journey.insight;
@@ -155,6 +160,23 @@ function WhyPanel({ journey }) {
             <div className="meter thin"><i style={{ width: `${Math.max(2, (Math.abs(f.minutes) / max) * 100)}%`, background: FACTOR_COLOUR[f.key] }} /></div>
           </div>
         ))}
+        {ins.roadworks?.length > 0 && (
+          <div className="factor-card">
+            <div className="fc-top">
+              <span><i className="fc-dot" style={{ background: '#e8710a' }} /> <b>Road works on this route</b></span>
+              <span className="muted small">{ins.roadworks.length} job{ins.roadworks.length === 1 ? '' : 's'}</span>
+            </div>
+            <ul className="works-list">
+              {ins.roadworks.slice(0, 5).map((w) => (
+                <li key={w.id}>
+                  <span><b>{w.traffic_management}</b> · {w.street}</span>
+                  <span className={w.effect_s >= 15 ? 'r' : w.effect_s >= 5 ? 'a' : 'muted'}>+{Math.round(w.effect_s)} s</span>
+                  <small className="muted">{w.status === 'planned' ? 'planned' : 'in progress'} until {w.end} · {w.measured ? 'measured' : 'typical for type'}</small>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         {ins.worst && (
           <div className="factor-card">
             <div className="fc-top">
@@ -228,11 +250,11 @@ function RouteSteps({ journey }) {
 
 // Directions: from/to + time, ranked route cards, and the chosen route's comparison, reasons and steps.
 // Reports the ranked list up (onResults) so the map can draw the options.
-export function Directions({ from, to, setFrom, setTo, onHover, selected, onSelectJourney, onClose, onResults, onShowDelays, onSearched }) {
+export function Directions({ from, to, setFrom, setTo, onHover, selected, onSelectJourney, onClose, onResults, onSearched }) {
   const [timeMode, setTimeMode] = useState('now'); // now | depart | arrive
   const [date, setDate] = useState(todayIso);
   const [time, setTime] = useState(nowHHMM);
-  const [sortBy, setSortBy] = useState('reliable');
+  const [sortBy, setSortBy] = useState('best');
   const [state, setState] = useState({ loading: false, error: null, journeys: null });
 
   useEffect(() => {
@@ -265,7 +287,7 @@ export function Directions({ from, to, setFrom, setTo, onHover, selected, onSele
 
   if (selected) {
     const sel = ranked.find((r) => journeyKey(r) === journeyKey(selected)) ?? selected;
-    const { level, pct } = riskOf(sel);
+    const { level, pct, source } = riskOf(sel);
     return (
       <div className="sheet dir">
         <button className="back-link" onClick={() => onSelectJourney(null)}>← All routes</button>
@@ -273,7 +295,7 @@ export function Directions({ from, to, setFrom, setTo, onHover, selected, onSele
           <div className="sheet-head">
             <h2>
               {LABELS[sel._tag]?.text ?? 'Route'}{' '}
-              {level && <span className={`chip ${RISK_CHIP[level]}`}>{RISK_TEXT[level]} risk{pct != null ? ` · ${pct}%` : ''}</span>}
+              {level && <span className={`chip ${RISK_CHIP[level]}`}>{RISK_TEXT[level]} risk{source === 'history' && pct != null ? ` · ${pct}%` : ''}</span>}
             </h2>
             <div className="muted">
               <Lines journey={sel} /> · {from?.stop_name} → {to?.stop_name} · {hhmm(sel.departure_time)}–{hhmm(sel.arrival_time)}
@@ -282,7 +304,16 @@ export function Directions({ from, to, setFrom, setTo, onHover, selected, onSele
           <FastVsSafe routes={ranked} selected={sel} onSelect={onSelectJourney} />
           <WhyPanel journey={sel} />
           {sel.prediction?.covered && (
-            <div className="block"><div className="label">Model prediction</div><PredictionBadge prediction={sel.prediction} /></div>
+            <div className="block">
+              <div className="label">Model prediction</div>
+              <PredictionBadge prediction={sel.prediction} />
+              {(sel.prediction.assumed ?? []).filter((a) => a.delay_now_min != null).map((a, i) => (
+                <div key={i} className="muted small">
+                  Assumes your bus reaches {a.stop_name} {a.delay_now_min < 0.5 ? 'on time' : `~${Math.round(a.delay_now_min)} min late`},
+                  {a.basis === 'stop' ? ` as buses usually do there around ${String(a.hour).padStart(2, '0')}:00` : ' the network average for that hour'}.
+                </div>
+              ))}
+            </div>
           )}
           <div className="block"><div className="label">Steps</div><RouteSteps journey={sel} /></div>
         </div>
@@ -330,8 +361,12 @@ export function Directions({ from, to, setFrom, setTo, onHover, selected, onSele
           ) : (
             <>
               <div className="results-head">
-                <span className="muted small">{ranked.length} routes · ranked by {sortBy === 'reliable' ? 'predicted reliability' : sortBy === 'fastest' ? 'timetable duration' : 'departure'}</span>
+                <span className="muted small">{ranked.length} routes · {{
+                  best: 'ranked by arrival time on a bad day', reliable: 'least likely to be late first',
+                  fastest: 'shortest timetable first', departure: 'by departure',
+                }[sortBy]}</span>
                 <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} aria-label="Sort routes">
+                  <option value="best">Best arrival</option>
                   <option value="reliable">Most reliable</option>
                   <option value="fastest">Fastest</option>
                   <option value="departure">Earliest</option>
@@ -339,7 +374,7 @@ export function Directions({ from, to, setFrom, setTo, onHover, selected, onSele
               </div>
               <ul className="results">
                 {ranked.map((j) => (
-                  <RouteCard key={journeyKey(j)} journey={j} onSelect={() => onSelectJourney(j)} onShowDelays={onShowDelays} />
+                  <RouteCard key={journeyKey(j)} journey={j} onSelect={() => onSelectJourney(j)} />
                 ))}
               </ul>
             </>

@@ -1,5 +1,70 @@
 # Changelog
 
+## Road works in the app (2026-11-08)
+
+Brings the road-works analysis (`archival_data/filter_roadworks.py`, `roadworks_flag.py`, `roadworks_explain.py`, `roadworks_by_hour.py`) into the app. Road works are known in advance from Street Manager permits, so they can inform delays before they happen.
+
+### Data
+
+- **`delay_engine/export_roadworks.py`** (also called by `export_for_api.py`) writes `roadworks.parquet`: 6,761 works that are in progress (1,163) or planned with a granted permit (5,598) and touch the carriageway. Each has its WGS84 position, street, traffic management, category and window, plus:
+  - `measured_s`: extra delay per bus stretch measured while it was active (264 works seen by at least 50 bus passes)
+  - `expected_s`: the typical extra for its traffic-management type, used when a work wasn't measured. Multi-way signals +19.1 s, two-way +6.9, road closure +5.0, lane closure +2.4 (each relative to the no-works mean of 4.3 s).
+
+  It also writes `roadworks_effects.json` (the analysis tables). Permits run up to 31 Oct 2026, so "in progress" means as of then.
+
+### Backend
+
+- **`GET /api/roadworks?date=&hour=&bbox=`.** Works on at that moment, each with its effect scaled to the hour by the measured by-hour penalty (×1.33 at weekday 17:00, ×0.5 at 21:00), plus a summary of the analysis. About 1,200 works are active on a weekday; the response takes 0.14 s.
+- **Route breakdowns** (`route_insight.py`) gain a **Road works** factor. It covers works within 75 m of a stretch ridden (the analysis radius) and active when the bus is there. One job adds its own effect; several at once add at least the "concurrent works" figure (+6.6 s for two, +12.1 s for three or more). Results are scaled to the hour. The route lists the works (`insight.roadworks`), and big ones feed the one-line reason.
+
+### Frontend
+
+- **Layers → Road works.** Every job on the road now (or at the delay layer's hour), as a marker sized and coloured by its effect on buses: big (≥15 s, mostly signals and closures), moderate or small. The tooltip shows type, street, status, dates and effect, and says "measured from N bus passes" or "typical for type".
+- **"Road works" card.** Extra delay by traffic-management type (bars), "it adds up" (one, two or three-plus jobs at once), the weekday peak hour, the multiplier for the current hour, and the permit date. With both layers on, the cards stack in a scrolling area.
+- **Route details.** A Road works factor card and a "Road works on this route" list with each job's effect; the works are marked on the chosen route.
+
+### Fixed
+
+- **Risk chips mixed two measures.** "Medium · 40%" sat next to "Low · 58%" because the label came from the model and the % from history. The chip now shows the model's label with its bad-day delay ("bad day: +5.4 min", one decimal, so 4.9 vs 5.1 doesn't look identical). The historical late share is on its own line ("In past data, 40% of these buses ran 5+ min late").
+- **Route tags now follow the design.** Most reliable = lowest bad-day delay; Fastest on paper = shortest timetable; Balanced = earliest bad-day arrival. Before, "Most reliable" could carry a higher risk than a neighbour. The default sort is "Best arrival" (earliest arrival on a bad day); "Most reliable", "Fastest" and "Earliest" are also available. With the real model, Langham Road → Belfield Road at 17:00 Monday now shows a real trade-off: 42 direct (fastest) against 371 › 42 (most reliable).
+
+## Real model connected, risk labels recalibrated (2026-11-08)
+
+- **The real model** (`delay_engine/model/models/`, trained until 15 Oct on 1.6M examples, 96 routes) loads in the backend. `lightgbm` needs to be installed in the venv.
+- **Its metadata confirms the input fix above matters.** "Late now" has importance 206; the next feature has 26. And on the model's own test set, "stays as late as it is now" scores 98 s error and "timetable / on time" 287 s, against the model's 81 s.
+- **Risk labels** (`prediction.py`) now use P90 under 5 min = low, 5–10 = medium, over 10 = high. The 5 min matches the UK punctuality window. On 283 real planned journeys the old 3/6 cut-offs gave 70% medium and 6% low; the new ones give 57% low, 42% medium and 1% high.
+
+## Realistic inputs for the delay model (2026-11-08)
+
+Connects Amy's trained model (PR #10, `delay_engine/model/`) to the delay engine's history, so its predictions get realistic inputs.
+
+### Why
+
+The model predicts "how late will this bus be k stops ahead", given how late it is **now** plus recent route and network delays. For a planned journey the backend passed `delay_now_s = 0` (`ASSUMED_DELAY_NOW_S`) and nothing for the live features, so every prediction assumed the bus reaches your stop exactly on time in quiet traffic. That has two consequences:
+
+- **The predictions are biased early.** Across 6.6M held-out bus arrivals (24 Oct–6 Nov, with typical values learnt from 27 Aug–23 Oct), the median bus is about 2 min late when you board.
+- **The model's strongest input is fixed.** In a test, assuming on time gave identical predictions at 08:00 and 17:00.
+
+Using each stop's typical lateness for that hour and day type instead cuts the error of that input from 4.3 to 3.6 min on average (18%), and from 7.0 to 5.6 min on weekdays 16:00–18:00 (19%).
+
+### Changed
+
+- **`backend/app/services/prediction.py`.** Each leg now gets realistic expected conditions instead of zeros:
+  - `delay_now_s`: typical lateness of buses arriving at the boarding stop at that hour and day type, or the network average for the hour when the stop has no data
+  - `recent_route_delay_s`: the route's median delay for that time band (route reliability)
+  - `recent_added_delay_s`: the network's typical delay gained per stop at that hour
+
+  These follow the same definitions as `features.add_live_features`. Each prediction now includes `assumed` (stop, minutes late assumed and its basis, one entry per leg), which the route details show: "Assumes your bus reaches Langham Road ~2 min late, as buses usually do there around 17:00."
+- **`delay_engine/model/predict.py`.** `predict_arrival()` accepts `recent_route_delay_s` and `recent_added_delay_s` as values; previously only a raw `recent_arrivals` table could supply them. This is backward compatible: `recent_arrivals`, when given, still takes precedence.
+- **`delay_engine/export_for_api.py`.** Writes `stop_typical.parquet` (per stop × day type × hour, n ≥ 10, 3 MB), and `added_med_s` in `network_hourly.parquet`.
+- **`services/delay.py`.** New `expected_conditions()`.
+
+### Not done
+
+- **No trained model files on this machine.** The integration was checked end to end with a throwaway model in the same format, which proves the plumbing but not accuracy. The real `delay_engine/model/models/` (or `models_archive/`) is needed to see real predictions.
+- **Risk thresholds** (since done, see below).
+- **For trips leaving now,** the matched bus's live delay would beat a typical value. That needs a live feed.
+
 ## Delay insights back in the app (2026-11-08)
 
 Brings the original design's delay features into the maps-style layout, backed by real data. The design's live weather ("light rain") and Christmas Markets aren't included: there's no live weather feed, and the events calendar only covers football and concerts.

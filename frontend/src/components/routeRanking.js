@@ -15,23 +15,29 @@ export function expectedDelay(j) {
   return { minutes: null, source: null };
 }
 
-// Risk: % chance of being >5 min late (history), and a level (model's if it has one).
+// Risk level: the model's (from its bad-day P90) when it has a prediction, else from history (% of these
+// buses >5 min late at this time). `source` says which, because the two can disagree: never show the model's
+// level next to the historical % as if they were one number.
 export function riskOf(j) {
   const pct = j.insight?.risk_pct ?? null;
-  let level = j.prediction?.covered ? j.prediction.risk_level : null;
-  if (!level && pct != null) level = pct < 25 ? 'low' : pct < 50 ? 'medium' : 'high';
-  return { pct, level };
+  if (j.prediction?.covered && j.prediction.risk_level) {
+    return { level: j.prediction.risk_level, pct, source: 'model', p90: j.prediction.delay_p90_min };
+  }
+  if (pct != null) return { level: pct < 25 ? 'low' : pct < 50 ? 'medium' : 'high', pct, source: 'history' };
+  return { level: null, pct: null, source: null };
 }
 
-const score = (j) => {
-  // lower is better: "safe" arrival = timetable + a pessimistic delay
+// How bad a bad day is (minutes): the model's P90, else history (typical delay weighted by the late share).
+const badDay = (j) => {
   const p = j.prediction;
-  if (p?.covered && Number.isFinite(p.delay_p90_min)) return j.duration_minutes + p.delay_p90_min;
+  if (p?.covered && Number.isFinite(p.delay_p90_min)) return p.delay_p90_min;
   const { minutes } = expectedDelay(j);
   const { pct } = riskOf(j);
   if (minutes == null) return Infinity;
-  return j.duration_minutes + minutes * (1 + (pct ?? 50) / 100);
+  return minutes * (1 + (pct ?? 50) / 100);
 };
+// Lower is better: when you'd arrive on a bad day (timetable + bad-day delay).
+const score = (j) => j.duration_minutes + badDay(j);
 
 export const LABELS = {
   reliable: { text: 'Most reliable', chip: 'green' },
@@ -39,21 +45,27 @@ export const LABELS = {
   balanced: { text: 'Balanced', chip: 'amber' },
 };
 
-// Tags journeys with _tag ('reliable' | 'fastest' | 'balanced') and sorts them.
-export function rankRoutes(journeys, sortBy = 'reliable') {
+// Tags journeys as in the design and sorts them:
+//   reliable  lowest bad-day delay (least likely to make you late)
+//   fastest   shortest on the timetable (only tagged if it isn't also the most reliable)
+//   balanced  earliest bad-day arrival (timetable + bad-day delay), if it's neither of the above
+// Sorts: 'best' = earliest bad-day arrival, 'reliable' = lowest bad-day delay, 'fastest', 'departure'.
+export function rankRoutes(journeys, sortBy = 'best') {
   if (!journeys?.length) return [];
-  const list = journeys.map((j) => ({ ...j, _score: score(j), _tag: null }));
-  const byScore = [...list].sort((a, b) => a._score - b._score);
+  const list = journeys.map((j) => ({ ...j, _bad: badDay(j), _score: score(j), _tag: null }));
+  const known = list.filter((j) => Number.isFinite(j._bad));
+  const reliable = known.length ? [...known].sort((a, b) => a._bad - b._bad || a.duration_minutes - b.duration_minutes)[0] : null;
   const fastest = [...list].sort((a, b) => a.duration_minutes - b.duration_minutes || a._score - b._score)[0];
-  const reliable = Number.isFinite(byScore[0]._score) ? byScore[0] : null;
+  const balanced = known.length ? [...known].sort((a, b) => a._score - b._score)[0] : null;
   if (reliable) reliable._tag = 'reliable';
   if (list.length > 1 && fastest !== reliable) fastest._tag = 'fastest';
-  const balanced = byScore.find((j) => !j._tag && Number.isFinite(j._score) && j._score <= (reliable?._score ?? 0) * 1.15);
-  if (balanced && list.length > 2) balanced._tag = 'balanced';
+  if (balanced && !balanced._tag) balanced._tag = 'balanced';
 
-  if (sortBy === 'departure') return list.sort((a, b) => a.departure_time.localeCompare(b.departure_time));
-  if (sortBy === 'fastest') return list.sort((a, b) => a.duration_minutes - b.duration_minutes);
-  return list.sort((a, b) => a._score - b._score || a.departure_time.localeCompare(b.departure_time));
+  const byDep = (a, b) => a.departure_time.localeCompare(b.departure_time);
+  if (sortBy === 'departure') return list.sort(byDep);
+  if (sortBy === 'fastest') return list.sort((a, b) => a.duration_minutes - b.duration_minutes || byDep(a, b));
+  if (sortBy === 'reliable') return list.sort((a, b) => a._bad - b._bad || byDep(a, b));
+  return list.sort((a, b) => a._score - b._score || byDep(a, b));
 }
 
 // Coordinates of the whole journey, for drawing it.

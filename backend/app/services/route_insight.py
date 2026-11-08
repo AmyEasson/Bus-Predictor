@@ -18,6 +18,7 @@ import math
 from datetime import date
 from functools import lru_cache
 
+import numpy as np
 import pandas as pd
 
 from . import delay
@@ -106,6 +107,7 @@ def journey_insight(j, travel_date: date):
     trip_route = _trip_route()
 
     stretches, tod_last, event_s, events_hit = [], 0.0, 0.0, set()
+    timed = []  # (path, seconds since service-day start) of every stretch ridden, for road works
     n_pairs = n_hit = observations = 0
     leg_late, on_time_probs, last_late = [], [], None
     for leg in _legs(j):
@@ -118,6 +120,7 @@ def journey_insight(j, travel_date: date):
             key = (a["stop_id"], b["stop_id"], int(weekend), hour)
             path = [[a["stop_lat"], a["stop_lon"]], [b["stop_lat"], b["stop_lon"]]]
             name = f"{a['stop_name']} → {b['stop_name']}"
+            timed.append((path, t, name))
             if key not in idx.index:
                 stretches.append({"path": path, "minutes": None, "band": None, "added_s": None, "name": name,
                                   "from_stop_id": a["stop_id"], "to_stop_id": b["stop_id"]})
@@ -159,6 +162,7 @@ def journey_insight(j, travel_date: date):
     if worst is not None and worst["added_s"] < 30:
         worst = None  # nothing worth calling out
 
+    works_s, works_on_route = _roadworks_along(timed, travel_date, weekend)
     typical = leg_late[-1] if leg_late and leg_late[-1] is not None else None
     hour_dep = (_secs(j["departure_time"]) // 3600) % 24
     factors = [
@@ -171,6 +175,8 @@ def journey_insight(j, travel_date: date):
         {"key": "events", "label": "Events", "minutes": round(event_s / 60, 1),
          "description": (f"{', '.join(sorted(events_hit))} nearby: {event_s / 60:+.1f} min" if events_hit
                          else "No football or concerts near this route at that time")},
+        {"key": "roadworks", "label": "Road works", "minutes": round(works_s / 60, 1),
+         "description": _works_sentence(works_on_route, works_s)},
     ]
 
     # Where and why only: how late is shown separately (the model's prediction when there is one), and
@@ -182,6 +188,10 @@ def journey_insight(j, travel_date: date):
         bits.append(f"{abs(tod_last):.0f} min {'slower' if tod_last > 0 else 'quicker'} than usual at this hour")
     if events_hit:
         bits.append(f"event at {', '.join(sorted(events_hit))}")
+    if works_on_route and works_s >= 15:
+        top = works_on_route[0]
+        bits.append(f"{top['traffic_management'].lower()} on {top['street']}"
+                    + (f" (+{len(works_on_route) - 1} more works)" if len(works_on_route) > 1 else ""))
     if bits:
         explanation = "; ".join(bits) + "."
         explanation = explanation[0].upper() + explanation[1:]
@@ -198,12 +208,75 @@ def journey_insight(j, travel_date: date):
         "risk_pct": risk_pct,
         "factors": factors,
         "worst": worst,
+        "roadworks": works_on_route,
         "explanation": explanation,
         "coverage": round(coverage, 2),
         "observations": observations,
         "confidence": confidence,
         "data_days": m["days"],
     }
+
+
+def _seg_dist_m(px, py, ax, ay, bx, by):
+    """Distance (m) from points (px, py) to segment a-b, all in local metres (numpy arrays for p)."""
+    dx, dy = bx - ax, by - ay
+    L2 = dx * dx + dy * dy
+    u = np.clip(((px - ax) * dx + (py - ay) * dy) / L2, 0, 1) if L2 > 0 else np.zeros_like(px)
+    return np.hypot(px - (ax + u * dx), py - (ay + u * dy))
+
+
+def _roadworks_along(timed, travel_date, weekend):
+    """Road works within ROADWORKS_RADIUS_M of the stretches ridden, active when the bus is there.
+    Per stretch: one job adds its own effect (measured for that permit, else typical for its traffic-management
+    type); several at once add at least the analysis's "concurrent works" figure. Scaled to the hour of travel.
+    Returns (total extra seconds, [works sorted by effect])."""
+    w = delay.roadworks()
+    if w is None or not timed:
+        return 0.0, []
+    day0 = pd.Timestamp(travel_date).tz_localize(delay.LONDON)
+    t_mid = day0 + pd.Timedelta(seconds=float(np.median([t for _, t, _ in timed])))
+    act = delay.roadworks_active(t_mid.tz_convert("UTC"))
+    if act is None or act.empty:
+        return 0.0, []
+    lat0 = timed[0][0][0][0]
+    kx, ky = 111_320.0 * math.cos(math.radians(lat0)), 110_540.0
+    # cheap box filter first
+    lats = [p for path, _, _ in timed for p in (path[0][0], path[1][0])]
+    lons = [p for path, _, _ in timed for p in (path[0][1], path[1][1])]
+    pad = 0.002
+    act = act[act.lat.between(min(lats) - pad, max(lats) + pad) & act.lon.between(min(lons) - pad, max(lons) + pad)]
+    if act.empty:
+        return 0.0, []
+    wx, wy = act.lon.to_numpy() * kx, act.lat.to_numpy() * ky
+    total, hit = 0.0, {}
+    for path, t, name in timed:
+        (alat, alon), (blat, blon) = path
+        near = _seg_dist_m(wx, wy, alon * kx, alat * ky, blon * kx, blat * ky) <= delay.ROADWORKS_RADIUS_M
+        if not near.any():
+            continue
+        hour = int(t // 3600) % 24
+        scale = delay.roadworks_hour_scale(hour, weekend)
+        here = act[near]
+        own = here.effect_base_s.to_numpy()
+        extra = max(own.max(), delay.roadworks_concurrent_s(len(here)) if len(here) > 1 else 0.0) * scale
+        total += extra
+        for r in here.itertuples(index=False):
+            item = hit.setdefault(r.permit_reference_number, delay.roadwork_out(r, scale))
+            item.setdefault("stretches", []).append(name)
+    works = sorted(hit.values(), key=lambda x: -x["effect_s"])
+    return total, works
+
+
+def _works_sentence(works, total_s):
+    if not works:
+        return "No road works on this route at that time (Street Manager permits)"
+    top = works[0]
+    kind = "measured there" if top["measured"] else f"typical for {top['traffic_management'].lower()}"
+    if len(works) == 1:
+        return (f"{top['traffic_management']} on {top['street']}: about +{total_s:.0f} s along this route "
+                f"({kind}: +{top['effect_s']:.0f} s per stretch)")
+    return (f"{len(works)} works along this route, about +{total_s:.0f} s in total. Biggest: "
+            f"{top['traffic_management'].lower()} on {top['street']} (+{top['effect_s']:.0f} s per stretch, {kind})")
 
 
 def annotate_route_insights(journeys, travel_date):

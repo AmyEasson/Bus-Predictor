@@ -73,14 +73,22 @@ class DelayModel:
 
     def predict_arrival(self, route, direction, to_stop, to_lat, to_lon, now_utc, delay_now_s,
                         stops_ahead, sched_travel_s, scheduled_arrival_utc,
-                        recent_arrivals=None, gap_ahead_s=np.nan, headway_ratio=np.nan):
-        """Predict when one bus will reach one stop. Returns delays and arrival times."""
+                        recent_arrivals=None, gap_ahead_s=np.nan, headway_ratio=np.nan,
+                        recent_route_delay_s=np.nan, recent_added_delay_s=np.nan):
+        """Predict when one bus will reach one stop. Returns delays and arrival times.
+
+        The live features can be given as values instead of `recent_arrivals`: for a trip in the future there
+        are no recent arrivals, and the backend passes typical values for that route/hour instead
+        (values from `recent_arrivals`, when given, take precedence)."""
         row = pd.DataFrame([{
             "route": str(route), "direction": str(direction), "to_stop": str(to_stop),
             "to_lat": to_lat, "to_lon": to_lon, "now_utc": pd.Timestamp(now_utc),
             "delay_now_s": delay_now_s, "stops_ahead": stops_ahead,
             "sched_travel_s": sched_travel_s, "gap_ahead_s": gap_ahead_s,
             "headway_ratio": headway_ratio}])
+        if recent_arrivals is None:
+            row["recent_route_delay_s"] = recent_route_delay_s
+            row["recent_added_delay_s"] = recent_added_delay_s
         # Same feature code as training -> same meaning
         row = F.add_time_features(row, "now_utc")
         if recent_arrivals is not None:

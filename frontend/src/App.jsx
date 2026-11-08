@@ -9,7 +9,8 @@ import { Directions } from './components/Directions';
 import { LayersButton, DelayBar, DelayInsightsCard } from './components/DelayControls';
 import { RouteOverlay, RouteLegend } from './components/RouteOverlay';
 import { expectedDelay } from './components/routeRanking';
-import { fetchDelayMap, fetchNetworkSummary } from './services/delayApi';
+import { fetchDelayMap, fetchNetworkSummary, fetchRoadworks } from './services/delayApi';
+import { RoadworksLayer, RoadworksCard } from './components/Roadworks';
 
 // Hexagon width (m) for a zoom level: big cells for the whole city, fine ones on the street.
 // Must be one of the backend's HEX_SIZES.
@@ -50,13 +51,15 @@ export default function App() {
   const [summary, setSummary] = useState(null);
 
   const [layerOn, setLayerOn] = useState(false);
-  const [colourBy, setColourBy] = useState('overall');
+  const colourBy = 'overall'; // the map always shows overall delay (the per-factor views were removed from the UI)
   const [factors, setFactors] = useState(['weather', 'time_of_day', 'events']);
   const [hour, setHour] = useState(() => Math.max(6, new Date().getHours()));
   const [dayType, setDayType] = useState(() => ([0, 6].includes(new Date().getDay()) ? 'weekend' : 'weekday'));
   const [mapView, setMapView] = useState({ zoom: 13, bbox: null });
   const [delay, setDelay] = useState(null);
   const [delayErr, setDelayErr] = useState(null);
+  const [worksOn, setWorksOn] = useState(false);
+  const [works, setWorks] = useState(null);
   const hexM = hexSizeFor(mapView.zoom);
   const bbox = mapView.zoom >= 14 ? mapView.bbox : null; // zoomed in: only what's on screen
 
@@ -78,6 +81,18 @@ export default function App() {
       .catch((e) => { if (!stale) setDelayErr(e.message); });
     return () => { stale = true; };
   }, [layerOn, hour, colourBy, factors, dayType, hexM, bbox]);
+
+  // road works on today, at the delay layer's hour when that's on (so both layers show the same moment)
+  useEffect(() => {
+    if (!worksOn) return undefined;
+    let stale = false;
+    const d = new Date();
+    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    fetchRoadworks({ date: today, hour: layerOn ? hour : d.getHours() })
+      .then((w) => { if (!stale) setWorks(w); })
+      .catch(() => { if (!stale) setWorks(null); });
+    return () => { stale = true; };
+  }, [worksOn, layerOn, hour]);
 
   const toggleFactor = (k) => setFactors((f) => (f.includes(k) ? f.filter((x) => x !== k) : [...f, k]));
 
@@ -109,7 +124,6 @@ export default function App() {
       return next;
     });
   }, []);
-  const showDelays = () => setLayerOn(true);
   const focusStretch = (s) => {
     const [a, b] = s.path;
     setFocus({ stop_id: s.id, stop_lat: (a[0] + b[0]) / 2, stop_lon: (a[1] + b[1]) / 2 });
@@ -130,6 +144,7 @@ export default function App() {
         drawRoute={!inDirections}
       >
         {layerOn && <DelayLayer data={delay} onViewChange={setMapView} />}
+        {worksOn && <RoadworksLayer data={works} />}
         {inDirections && <RouteOverlay routes={routes} selected={selectedJourney} />}
       </BusMap>
 
@@ -147,7 +162,6 @@ export default function App() {
             onSelectJourney={setSelectedJourney}
             onClose={closeDirections}
             onResults={setRoutes}
-            onShowDelays={showDelays}
             onSearched={onSearched}
           />
         ) : (
@@ -167,21 +181,24 @@ export default function App() {
               }
             />
 
+            <div className="panel-body">
             {mode === 'place' && place ? (
               <StopCard
                 stop={place}
                 onDirectionsTo={() => openDirections({ to: place })}
                 onDirectionsFrom={() => openDirections({ from: place })}
               />
+            ) : worksOn && !layerOn ? (
+              <RoadworksCard data={works} />
             ) : layerOn ? (
               <DelayInsightsCard
                 data={delay}
-                colourBy={colourBy}
-                setColourBy={setColourBy}
                 factors={factors}
                 toggleFactor={toggleFactor}
                 onFocusStretch={focusStretch}
-              />
+              >
+                {worksOn && <RoadworksCard data={works} />}
+              </DelayInsightsCard>
             ) : (
               <div className="sheet">
                 {summary && (
@@ -215,11 +232,18 @@ export default function App() {
                 <button className="action primary wide" onClick={() => setLayerOn(true)}>Explore where buses get delayed</button>
               </div>
             )}
+            </div>
           </>
         )}
       </div>
 
-      <LayersButton on={layerOn} onToggle={() => setLayerOn((v) => !v)} data={delay} />
+      <LayersButton
+        on={layerOn}
+        onToggle={() => setLayerOn((v) => !v)}
+        data={delay}
+        worksOn={worksOn}
+        onToggleWorks={() => setWorksOn((v) => !v)}
+      />
 
       {layerOn && (
         <DelayBar data={delay} error={delayErr} hour={hour} setHour={setHour} dayType={dayType} setDayType={setDayType} />

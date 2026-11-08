@@ -18,13 +18,20 @@ sys.path.insert(0, str(ROOT / "delay_engine" / "model"))
 
 TZ = "Europe/London"
 
-# The model was built to be told how late the bus is *right now*. For a future journey we
-# don't know that, so we assume the bus is on time when it reaches the boarding stop.
-# TODO: replace with the live delay of the matched bus when one is available.
-ASSUMED_DELAY_NOW_S = 0.0
+# The model is built to be told how late the bus is *right now* plus recent route/corridor delays. For a
+# journey in the future we don't know those, so we pass the typical values for that stop, route and hour
+# (delay.expected_conditions). Assuming "on time" instead had 18% more error on held-out days, and was
+# biased: buses are typically ~2 min late when you board, more at peak.
+# TODO: when a live feed exists, use the matched bus's actual delay for trips leaving now.
 
-# Risk label from the "be safe" (P90) delay, in minutes. Placeholder thresholds - calibrate them.
-RISK_LOW_MAX, RISK_MEDIUM_MAX = 3.0, 6.0
+# Risk label from the "be safe" (P90) delay, in minutes: how late you'd be on a bad day (1 trip in 10).
+#   low     < 5 min   even a bad day stays inside the UK punctuality window (a bus is "late" from 6 min)
+#   medium  5-10 min
+#   high    > 10 min
+# Checked with the real model on 283 planned journeys (40 random routes, Mon + Sat, 08:00/12:30/17:00/20:30):
+# P90 median 4.8 min, 10-90% range 3.4-7.3 -> 57% low, 42% medium, 1% high. The old 3/6 placeholders
+# labelled 70% of the same trips "medium" and only 6% "low", so the label hardly told routes apart.
+RISK_LOW_MAX, RISK_MEDIUM_MAX = 5.0, 10.0
 
 _model = None
 _model_failed = False
@@ -65,6 +72,25 @@ def get_model():
             print(f"[prediction] model not loaded: {e}")
             _model_failed = True
     return _model
+
+
+@lru_cache(maxsize=1)
+def _trip_route_id():
+    from .journey import load_timetable_data
+    trips = load_timetable_data()[1]
+    return dict(zip(trips["trip_id"].astype(str), trips["route_id"].astype(str)))
+
+
+def _expected(stop_id, trip_id, travel_date, dep_s):
+    from . import delay
+    hour = int(dep_s // 3600) % 24
+    try:
+        return delay.expected_conditions(stop_id, _trip_route_id().get(str(trip_id)), hour,
+                                         travel_date.weekday() >= 5)
+    except Exception as e:  # delay export missing: fall back to the model's own "unknown"
+        print(f"[prediction] expected conditions unavailable: {e}")
+        return {"delay_now_s": np.nan, "recent_route_delay_s": np.nan, "recent_added_delay_s": np.nan,
+                "delay_now_basis": None}
 
 
 @lru_cache(maxsize=1)
@@ -111,12 +137,15 @@ def predict_leg(model, travel_date, route, trip_id, stops):
 
     board, alight = stops[0], stops[-1]
     dep_s, arr_s = _hms(board["departure_time"]), _hms(alight["arrival_time"])
+    exp = _expected(board["stop_id"], trip_id, travel_date, dep_s)
     r = model.predict_arrival(
         route=route,
         direction=_direction_lookup().get(trip_id, ""),
         to_stop=alight["stop_id"], to_lat=alight["stop_lat"], to_lon=alight["stop_lon"],
         now_utc=service_time_utc(travel_date, dep_s),  # time of travel, so weather/events match
-        delay_now_s=ASSUMED_DELAY_NOW_S,
+        delay_now_s=exp["delay_now_s"],
+        recent_route_delay_s=exp["recent_route_delay_s"],
+        recent_added_delay_s=exp["recent_added_delay_s"],
         stops_ahead=len(stops) - 1,
         sched_travel_s=arr_s - dep_s,
         scheduled_arrival_utc=service_time_utc(travel_date, arr_s),
@@ -130,6 +159,13 @@ def predict_leg(model, travel_date, route, trip_id, stops):
         "arrival_p50": _local_hhmm(r["arrival_p50"]),
         "arrival_p90": _local_hhmm(r["arrival_p90"]),
         "risk_level": _risk(p90),
+        # what we told the model about the bus when you board (shown in the UI, so it's not a black box)
+        "assumed": {
+            "stop_name": board.get("stop_name"),
+            "delay_now_min": None if pd.isna(exp["delay_now_s"]) else round(exp["delay_now_s"] / 60, 1),
+            "basis": exp["delay_now_basis"],
+            "hour": int(dep_s // 3600) % 24,
+        },
         "_arrival_p90_s": (r["arrival_p90"] - service_time_utc(travel_date, 0)).total_seconds(),
     }
 
@@ -157,6 +193,7 @@ def annotate_journeys(journeys, travel_date):
             last = legs[-1]
             pred = {k: last[k] for k in ("delay_p10_min", "delay_p50_min", "delay_p90_min",
                                          "arrival_p50", "arrival_p90", "risk_level")}
+            pred["assumed"] = [l["assumed"] for l in legs]
             pred["covered"] = True
             if MOCK:
                 pred["mock"] = True
