@@ -1,623 +1,229 @@
-
-import { useEffect, useMemo, useState } from 'react';
-import './App.css';
-import { Header } from './components/Header';
+import { useCallback, useEffect, useState } from 'react';
 import 'leaflet/dist/leaflet.css';
+import './App.css';
 import { BusMap } from './components/BusMap';
-import { fetchAllLiveBuses, searchStops, fetchJourneys } from './services/api';
-import { fetchDelayMap } from './services/delayApi';
-import { DelayPanel, DelayLegend } from './components/DelayPanel';
 import { DelayLayer } from './components/DelayLayer';
+import { SearchBox } from './components/SearchBox';
+import { StopCard } from './components/StopCard';
+import { Directions } from './components/Directions';
+import { LayersButton, DelayBar, DelayInsightsCard } from './components/DelayControls';
+import { RouteOverlay, RouteLegend } from './components/RouteOverlay';
+import { expectedDelay } from './components/routeRanking';
+import { fetchDelayMap, fetchNetworkSummary } from './services/delayApi';
 
-// TODO: replace with POST /route once the delay model is connected.
-const SAMPLE_ROUTES = [
-  { id: 1, label: 'Most reliable', tone: 'green', lines: ['42'], mins: 31, timetable: 29, delay: 2, risk: 12 },
-  { id: 2, label: 'Fastest on paper', tone: 'red', lines: ['43'], mins: 31, timetable: 22, delay: 9, risk: 68 },
-  { id: 3, label: 'Balanced', tone: 'amber', lines: ['142'], mins: 33, timetable: 26, delay: 7, risk: 41 },
-];
+// Hexagon width (m) for a zoom level: big cells for the whole city, fine ones on the street.
+// Must be one of the backend's HEX_SIZES.
+function hexSizeFor(zoom) {
+  if (zoom <= 10) return 2000;
+  if (zoom <= 11) return 1200;
+  if (zoom <= 12) return 700;
+  if (zoom <= 13) return 400;
+  if (zoom <= 14) return 250;
+  return 150;
+}
 
-const TONE = {
-  green: 'var(--green)',
-  amber: 'var(--amber)',
-  red: 'var(--red)'
+// Recent trips, remembered in this browser only.
+const RECENT_KEY = 'recentTrips';
+const loadRecent = () => {
+  try { return JSON.parse(localStorage.getItem(RECENT_KEY)) ?? []; } catch { return []; }
+};
+const saveRecent = (list) => {
+  try { localStorage.setItem(RECENT_KEY, JSON.stringify(list)); } catch { /* storage blocked: fine */ }
 };
 
-const TIME_MODES = ['Depart after', 'Arrive by'];
-
-function getJourneyKey(journey) {
-  if (journey.journey_type === 'transfer') {
-    return journey.legs
-      .map((leg) => leg.trip_id)
-      .join('-');
-  }
-
-  return journey.trip_id;
-}
-
-function StopAutocomplete({ label, onSelect, onHover, color }) {
-  const [query, setQuery] = useState('');
-  const [suggestions, setSuggestions] = useState([]);
-  const [isSelected, setIsSelected] = useState(false);
-
-  useEffect(() => {
-    if (query.trim().length < 2 || isSelected) {
-      setSuggestions([]);
-      onHover(null);
-      return;
-    }
-
-    let cancelled = false;
-
-    const timer = setTimeout(async () => {
-      const results = await searchStops(query.trim());
-
-      if (!cancelled) {
-        setSuggestions(results);
-      }
-    }, 250);
-
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [query, isSelected, onHover]);
-
-  const handleChange = (value) => {
-    setQuery(value);
-    setIsSelected(false);
-    onSelect(null);
-    onHover(null);
-  };
-
-  const handleSelect = (stop) => {
-    setQuery(stop.stop_name);
-    setIsSelected(true);
-    setSuggestions([]);
-    onHover(null);
-    onSelect(stop);
-  };
-
-  return (
-    <div className="field autocomplete-field">
-      <span className="pin" style={{ background: color }} />
-
-      <div className="autocomplete-content">
-        <label>{label}</label>
-
-        <input
-          value={query}
-          onChange={(e) => handleChange(e.target.value)}
-          placeholder="Search for a bus stop..."
-          autoComplete="off"
-        />
-
-        {suggestions.length > 0 && !isSelected && (
-          <div className="stop-dropdown">
-            {suggestions.map((stop) => (
-              <button
-                type="button"
-                className="stop-option"
-                key={stop.stop_id}
-                onMouseDown={(e) => e.preventDefault()}
-                onMouseEnter={() => onHover(stop)}
-                onMouseLeave={() => onHover(null)}
-                onClick={() => handleSelect(stop)}
-              >
-                <div className="stop-info">
-                  <span className="stop-name">{stop.stop_name}</span>
-                  {stop.stop_code && (
-                    <span className="stop-code">
-                      Code: {stop.stop_code}
-                    </span>
-                  )}
-                </div>
-                <span className="stop-id">{stop.stop_id}</span>
-              </button>
-            ))}
-          </div>
-        )}
-
-        {query.trim().length >= 2 &&
-          suggestions.length === 0 &&
-          !isSelected && (
-            <div className="stop-dropdown empty">
-              No matching stops found
-            </div>
-          )}
-      </div>
-    </div>
-  );
-}
-
-function RouteCard({ r }) {
-  return (
-    <div className="card">
-      <div className="card-top">
-        <span className={`chip ${r.tone}`}>{r.label}</span>
-      </div>
-      <div className="big">{r.mins} min</div>
-      <div className="meta">
-        {r.lines.map((l) => (
-          <span key={l} className="line-tag">{l}</span>
-        ))}
-        <span>timetable {r.timetable} min</span>
-        <span style={{ color: TONE[r.tone], fontWeight: 600 }}>
-          +{r.delay} min predicted
-        </span>
-      </div>
-      <div className="bar">
-        <i style={{ width: `${r.risk}%`, background: TONE[r.tone] }} />
-      </div>
-    </div>
-  );
-}
-
+// Flow, like a maps app:
+//   explore    search box (+ directions button), typical-now card, recent trips
+//   place      a stop was picked: its card, with Directions / Start here
+//   directions from/to + time, ranked route cards; picking one shows fast-vs-safe, why, and steps
+// The delay hexagons are a map layer from the Layers button; in explore mode they come with a side card.
 export default function App() {
-  const [tab, setTab] = useState('plan');
-  const [fromStop, setFromStop] = useState(null);
-  const [toStop, setToStop] = useState(null);
+  const [mode, setMode] = useState('explore');
+  const [place, setPlace] = useState(null);
+  const [from, setFrom] = useState(null);
+  const [to, setTo] = useState(null);
+  const [routes, setRoutes] = useState([]);
+  const [selectedJourney, setSelectedJourney] = useState(null);
   const [hoveredStop, setHoveredStop] = useState(null);
+  const [focus, setFocus] = useState(null);
+  const [recent, setRecent] = useState(loadRecent);
 
-  const [timeMode, setTimeMode] = useState(TIME_MODES[0]);
+  const [summary, setSummary] = useState(null);
 
-  // Travel date defaults to today.
-  const [selectedDate, setSelectedDate] = useState(() => {
-    const today = new Date();
-
-    return [
-      today.getFullYear(),
-      String(today.getMonth() + 1).padStart(2, '0'),
-      String(today.getDate()).padStart(2, '0'),
-    ].join('-');
-  });
-
-  const [selectedTime, setSelectedTime] = useState(() => {
-    const now = new Date();
-    const minutes = Math.ceil(now.getMinutes() / 15) * 15;
-
-    now.setMinutes(minutes, 0, 0);
-
-    return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-  });
-
-  const [rows, setRows] = useState([]);
-  const [firstLoad, setFirstLoad] = useState(true);
-  const [searched, setSearched] = useState(false);
-
+  const [layerOn, setLayerOn] = useState(false);
   const [colourBy, setColourBy] = useState('overall');
   const [factors, setFactors] = useState(['weather', 'time_of_day', 'events']);
-  const [hour, setHour] = useState(Math.min(18, Math.max(7, new Date().getHours())));
+  const [hour, setHour] = useState(() => Math.max(6, new Date().getHours()));
+  const [dayType, setDayType] = useState(() => ([0, 6].includes(new Date().getDay()) ? 'weekend' : 'weekday'));
+  const [mapView, setMapView] = useState({ zoom: 13, bbox: null });
   const [delay, setDelay] = useState(null);
   const [delayErr, setDelayErr] = useState(null);
+  const hexM = hexSizeFor(mapView.zoom);
+  const bbox = mapView.zoom >= 14 ? mapView.bbox : null; // zoomed in: only what's on screen
 
-  const [journeys, setJourneys] = useState([]);
-  const [journeyLoading, setJourneyLoading] = useState(false);
-  const [journeyError, setJourneyError] = useState(null);
-  const [selectedJourney, setSelectedJourney] = useState(null);
-
-  // Load live bus positions.
   useEffect(() => {
-    const load = async () => {
-      try {
-        setRows(await fetchAllLiveBuses());
-      } finally {
-        setFirstLoad(false);
-      }
-    };
-
+    let stale = false;
+    const load = () => fetchNetworkSummary({ hour: new Date().getHours() })
+      .then((s) => { if (!stale) setSummary(s); })
+      .catch(() => { if (!stale) setSummary(null); });
     load();
-
-    const t = setInterval(load, 15000);
-    return () => clearInterval(t);
+    const t = setInterval(load, 10 * 60 * 1000);
+    return () => { stale = true; clearInterval(t); };
   }, []);
 
-  // Load delay map data.
   useEffect(() => {
-    if (tab !== 'delay-map') return;
-
+    if (!layerOn) return undefined;
     let stale = false;
+    fetchDelayMap({ hour, colourBy, factors, dayType, hexM, bbox })
+      .then((d) => { if (!stale) { setDelay(d); setDelayErr(null); } })
+      .catch((e) => { if (!stale) setDelayErr(e.message); });
+    return () => { stale = true; };
+  }, [layerOn, hour, colourBy, factors, dayType, hexM, bbox]);
 
-    fetchDelayMap({ hour, colourBy, factors })
-      .then((d) => {
-        if (!stale) {
-          setDelay(d);
-          setDelayErr(null);
-        }
-      })
-      .catch((e) => {
-        if (!stale) setDelayErr(e.message);
-      });
+  const toggleFactor = (k) => setFactors((f) => (f.includes(k) ? f.filter((x) => x !== k) : [...f, k]));
 
-    return () => {
-      stale = true;
-    };
-  }, [tab, hour, colourBy, factors]);
-
-  const toggleFactor = (k) => {
-    setFactors((f) =>
-      f.includes(k) ? f.filter((x) => x !== k) : [...f, k]
-    );
+  const pickPlace = (stop) => {
+    setPlace(stop);
+    setFocus(stop);
+    setMode(stop ? 'place' : 'explore');
   };
-
-  // Search for direct and transfer journeys using the selected date and time.
-  const handleSearch = async () => {
-    setJourneyLoading(true);
-    setJourneyError(null);
+  const openDirections = ({ from: f = null, to: t = null } = {}) => {
+    setFrom(f);
+    setTo(t);
     setSelectedJourney(null);
-
-    const travelDate = selectedDate;
-
-    try {
-      const response = await fetchJourneys({
-        originStopId: fromStop.stop_id,
-        destinationStopId: toStop.stop_id,
-        travelDate,
-        limit: 10,
-
-        departureAfter:
-          timeMode === 'Depart after' ? selectedTime : null,
-
-        arriveBy:
-          timeMode === 'Arrive by' ? selectedTime : null,
-
-        includeStops: true,
-      });
-
-      setJourneys(response.journeys);
-      setSearched(true);
-    } catch (error) {
-      console.error('Journey search failed:', error);
-      setJourneyError('Could not find journeys. Please try again.');
-    } finally {
-      setJourneyLoading(false);
-    }
+    setRoutes([]);
+    setMode('directions');
+  };
+  const closeDirections = () => {
+    setSelectedJourney(null);
+    setRoutes([]);
+    setMode(place ? 'place' : 'explore');
+  };
+  // remember the trip with its usual delay, for the "Recent" list
+  const onSearched = useCallback((f, t, best) => {
+    const { minutes } = expectedDelay(best);
+    const h = best.departure_time.slice(0, 2);
+    const item = { from: f, to: t, usual: minutes, at: `${h}:00` };
+    setRecent((list) => {
+      const next = [item, ...list.filter((r) => !(r.from.stop_id === f.stop_id && r.to.stop_id === t.stop_id))].slice(0, 5);
+      saveRecent(next);
+      return next;
+    });
+  }, []);
+  const showDelays = () => setLayerOn(true);
+  const focusStretch = (s) => {
+    const [a, b] = s.path;
+    setFocus({ stop_id: s.id, stop_lat: (a[0] + b[0]) / 2, stop_lon: (a[1] + b[1]) / 2 });
   };
 
-  // One marker per vehicle (newest fix).
-  const { buses, asOf } = useMemo(() => {
-    const latest = new Map();
-
-    for (const b of rows) {
-      if (b.latitude == null || b.longitude == null) continue;
-
-      const k = `${b.operator_ref}|${b.vehicle_ref}`;
-
-      if (
-        !latest.has(k) ||
-        b.recorded_at > latest.get(k).recorded_at
-      ) {
-        latest.set(k, b);
-      }
-    }
-
-    const list = [...latest.values()];
-
-    const newest = list.reduce(
-      (m, b) => Math.max(m, Date.parse(b.recorded_at) || 0),
-      0
-    );
-
-    return {
-      buses: list,
-      asOf: newest ? new Date(newest) : null
-    };
-  }, [rows]);
+  const inDirections = mode === 'directions';
+  const pins = inDirections
+    ? [from && { stop: from, kind: 'from' }, to && { stop: to, kind: 'to' }].filter(Boolean)
+    : place ? [{ stop: place, kind: 'place' }] : [];
 
   return (
     <div className="app">
-      <Header
-        activeTab={tab}
-        setActiveTab={(newTab) => {
-          setTab(newTab);
+      <BusMap
+        hoveredStop={hoveredStop}
+        selectedJourney={selectedJourney}
+        pins={pins}
+        focusStop={inDirections ? null : focus}
+        drawRoute={!inDirections}
+      >
+        {layerOn && <DelayLayer data={delay} onViewChange={setMapView} />}
+        {inDirections && <RouteOverlay routes={routes} selected={selectedJourney} />}
+      </BusMap>
 
-          if (newTab !== 'plan') {
-            setSelectedJourney(null);
-          }
-        }}
-        asOf={asOf}
-      />
+      {inDirections && <RouteLegend routes={routes} selected={selectedJourney} />}
 
-      <div className="main">
-        <aside className="side">
-          {tab === 'delay-map' ? (
-            <DelayPanel
-              data={delay}
-              error={delayErr}
-              colourBy={colourBy}
-              setColourBy={setColourBy}
-              factors={factors}
-              toggleFactor={toggleFactor}
-              hour={hour}
-              setHour={setHour}
+      <div className="panel">
+        {inDirections ? (
+          <Directions
+            from={from}
+            to={to}
+            setFrom={(s) => { setFrom(s); setSelectedJourney(null); }}
+            setTo={(s) => { setTo(s); setSelectedJourney(null); }}
+            onHover={setHoveredStop}
+            selected={selectedJourney}
+            onSelectJourney={setSelectedJourney}
+            onClose={closeDirections}
+            onResults={setRoutes}
+            onShowDelays={showDelays}
+            onSearched={onSearched}
+          />
+        ) : (
+          <>
+            <SearchBox
+              value={place}
+              onSelect={pickPlace}
+              onHover={setHoveredStop}
+              placeholder="Search bus stops"
+              className="main-search"
+              leading={<span className="search-icon" aria-hidden>⌕</span>}
+              trailing={
+                <>
+                  {place && <button className="icon-btn" onClick={() => pickPlace(null)} aria-label="Clear">✕</button>}
+                  <button className="icon-btn dir-btn" onClick={() => openDirections({ to: place })} aria-label="Directions" title="Directions">➜</button>
+                </>
+              }
             />
-          ) : searched ? (
-            <>
-              <button
-                className="back"
-                onClick={() => {
-                  setSearched(false);
-                  setSelectedJourney(null);
-                }}
-              >
-                ← Edit search
-              </button>
 
-              <div>
-                <h1>
-                  {fromStop.stop_name} to {toStop.stop_name}
-                </h1>
-                <p className="sub">
-                  {journeys.length} journeys found
-                </p>
-                <p className="journey-date">
-                  {new Date(`${selectedDate}T12:00:00`).toLocaleDateString('en-GB', {
-                    weekday: 'long',
-                    day: 'numeric',
-                    month: 'long',
-                    year: 'numeric',
-                  })}
-                </p>
-              </div>
-
-              {journeys.length === 0 ? (
-                <div className="note">
-                  <div>
-                    <strong>No journeys found</strong>
-                    Try different stops or another travel date.
-                  </div>
-                </div>
-              ) : (
-                journeys.map((journey) => {
-                  const isTransfer = journey.journey_type === 'transfer';
-                  const journeyKey = getJourneyKey(journey);
-                  const isSelected =
-                    selectedJourney &&
-                    getJourneyKey(selectedJourney) === journeyKey;
-
-                  return (
-                    <div
-                      className="card"
-                      key={journeyKey}
-                      onClick={() => setSelectedJourney(journey)}
-                      style={{
-                        cursor: 'pointer',
-                        border: isSelected
-                          ? '2px solid #3b7a57'
-                          : undefined,
-                      }}
-                    >
-                      <div className="card-top">
-                        {isTransfer ? (
-                          <>
-                            <span className="line-tag">
-                              Route {journey.legs[0].route}
-                            </span>
-                            <span className="line-tag">
-                              Route {journey.legs[1].route}
-                            </span>
-                            <span className="chip amber">1 change</span>
-                          </>
-                        ) : (
-                          <>
-                            <span className="line-tag">
-                              Route {journey.route}
-                            </span>
-                            <span className="chip green">Direct</span>
-                          </>
-                        )}
-                      </div>
-
-                      <div className="big">
-                        {journey.duration_minutes} min
-                      </div>
-
-                      <div className="meta">
-                        <span>
-                          {journey.departure_time.slice(0, 5)}
-                          {' → '}
-                          {journey.arrival_time.slice(0, 5)}
-                        </span>
-                        {isTransfer ? (
-                          <span>
-                            Change at {journey.interchange_stop.stop_name}
-                          </span>
-                        ) : (
-                          <span>{journey.destination}</span>
-                        )}
-                      </div>
-
-                      {isTransfer && (
-                        <div className="meta">
-                          <span>
-                            {journey.transfer_wait_minutes} min between buses
-                          </span>
-                        </div>
-                      )}
-
-                      {isTransfer && (
-                        <details>
-                          <summary>Journey details</summary>
-
-                          <div className="journey-stops">
-                            {journey.legs.map((leg, index) => (
-                              <div key={leg.trip_id}>
-                                <strong>
-                                  Leg {index + 1}: Route {leg.route}
-                                </strong>
-                                <span>
-                                  {leg.departure_time.slice(0, 5)}
-                                  {' → '}
-                                  {leg.arrival_time.slice(0, 5)}
-                                </span>
-                                <span>{leg.destination}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </details>
-                      )}
-
-                      {journey.stops && (
-                        <details>
-                          <summary>
-                            View stops ({journey.stops.length})
-                          </summary>
-
-                          <div className="journey-stops">
-                            {journey.stops.map((stop, index) => (
-                              <div
-                                key={`${stop.stop_id}-${index}`}
-                              >
-                                {stop.stop_name}
-                                <span>
-                                  {stop.arrival_time?.slice(0, 5)}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        </details>
-                      )}
+            {mode === 'place' && place ? (
+              <StopCard
+                stop={place}
+                onDirectionsTo={() => openDirections({ to: place })}
+                onDirectionsFrom={() => openDirections({ from: place })}
+              />
+            ) : layerOn ? (
+              <DelayInsightsCard
+                data={delay}
+                colourBy={colourBy}
+                setColourBy={setColourBy}
+                factors={factors}
+                toggleFactor={toggleFactor}
+                onFocusStretch={focusStretch}
+              />
+            ) : (
+              <div className="sheet">
+                {summary && (
+                  <div className="block">
+                    <div className="label">Network at this hour ({summary.day_type}s)</div>
+                    <div className="stats">
+                      <div><b className={summary.pct_on_time >= 70 ? 'g' : summary.pct_on_time >= 55 ? 'a' : 'r'}>{summary.pct_on_time}%</b><span>buses on time</span></div>
+                      <div><b className="r">{summary.delayed_over_5min.toLocaleString()}</b><span>over 5 min late</span></div>
+                      <div><b className="a">+{summary.avg_delay_minutes} min</b><span>average delay</span></div>
                     </div>
-                  );
-                })
-              )}
-            </>
-          ) : (
-            <>
-              <div>
-                <h1>Where to?</h1>
-                <p className="sub">
-                  Routes ranked by predicted delay, not just the timetable.
-                </p>
-              </div>
-
-              <StopAutocomplete
-                label="From"
-                onSelect={setFromStop}
-                onHover={setHoveredStop}
-                color="#2d55d4"
-              />
-
-              <StopAutocomplete
-                label="To"
-                onSelect={setToStop}
-                onHover={setHoveredStop}
-                color="#d9534f"
-              />
-
-              {/* Time mode selection */}
-              <div className="pills">
-                {TIME_MODES.map((mode) => (
-                  <button
-                    type="button"
-                    key={mode}
-                    className={`pill ${timeMode === mode ? 'on' : ''}`}
-                    onClick={() => setTimeMode(mode)}
-                  >
-                    {mode}
-                  </button>
-                ))}
-              </div>
-
-              {/* Date selection */}
-              <div className="field">
-                <label htmlFor="travel-date">Travel date</label>
-                <input
-                  id="travel-date"
-                  className="time-select"
-                  type="date"
-                  value={selectedDate}
-                  min={new Date().getFullYear() + '-' +
-                    String(new Date().getMonth() + 1).padStart(2, '0') + '-' +
-                    String(new Date().getDate()).padStart(2, '0')}
-                  onChange={(e) => setSelectedDate(e.target.value)}
-                />
-              </div>
-
-              {/* Time selection */}
-              <div className="field time-field">
-                <label>
-                  {timeMode === 'Depart after'
-                    ? 'Depart after'
-                    : 'Arrive by'}
-                </label>
-
-                <input
-                  className="time-select"
-                  type="time"
-                  step="900"
-                  value={selectedTime}
-                  onChange={(e) => setSelectedTime(e.target.value)}
-                />
-              </div>
-
-              <button
-                className="cta"
-                disabled={!fromStop || !toStop || journeyLoading}
-                onClick={handleSearch}
-              >
-                {journeyLoading ? 'Searching...' : 'Find routes'}
-              </button>
-
-              {journeyError && (
-                <div className="note warn">
-                  <div>
-                    <strong>Search error</strong>
-                    {journeyError}
+                    <div className="muted small">Typical for this hour, from past bus data. Not live.</div>
                   </div>
-                </div>
-              )}
-
-              <div className="note">
-                <span
-                  className="dot"
-                  style={{ marginTop: 4, flex: 'none' }}
-                />
-                <div>
-                  <strong>Delay predictions on</strong>
-                  Uses live bus positions, weather and local events
-                </div>
+                )}
+                {recent.length > 0 && (
+                  <div className="block">
+                    <div className="label">Recent</div>
+                    <ul className="recent">
+                      {recent.map((r) => (
+                        <li key={`${r.from.stop_id}-${r.to.stop_id}`}>
+                          <button onClick={() => openDirections({ from: r.from, to: r.to })}>
+                            <b>{r.from.stop_name} → {r.to.stop_name}</b>
+                            <span className="muted small">
+                              {r.usual == null ? 'No delay data' : r.usual < 1 ? `Usually on time at ${r.at}` : `Usually +${Math.round(r.usual)} min at ${r.at}`}
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                <button className="action primary wide" onClick={() => setLayerOn(true)}>Explore where buses get delayed</button>
               </div>
-
-              <div className="section">Network right now</div>
-
-              <div className="stats">
-                <div className="stat">
-                  <b>–</b>
-                  <span>buses on time</span>
-                </div>
-                <div className="stat">
-                  <b>–</b>
-                  <span>delayed &gt; 5 min</span>
-                </div>
-                <div className="stat">
-                  <b>–</b>
-                  <span>avg delay</span>
-                </div>
-              </div>
-            </>
-          )}
-        </aside>
-
-        <div className="mapwrap">
-          {firstLoad && (
-            <div className="toast">Loading bus positions…</div>
-          )}
-
-          {tab === 'plan' && !firstLoad && buses.length === 0 && (
-            <div className="toast err">No bus data found</div>
-          )}
-
-          <BusMap
-            buses={tab === 'plan' ? buses : []}
-            hoveredStop={hoveredStop}
-            selectedJourney={selectedJourney}
-          >
-            {tab === 'delay-map' && <DelayLayer data={delay} />}
-          </BusMap>
-
-          {tab === 'delay-map' && <DelayLegend data={delay} />}
-        </div>
+            )}
+          </>
+        )}
       </div>
+
+      <LayersButton on={layerOn} onToggle={() => setLayerOn((v) => !v)} data={delay} />
+
+      {layerOn && (
+        <DelayBar data={delay} error={delayErr} hour={hour} setHour={setHour} dayType={dayType} setDayType={setDayType} />
+      )}
     </div>
   );
 }

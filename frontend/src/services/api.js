@@ -1,6 +1,7 @@
 import axios from 'axios';
 
-const API_BASE_URL = 'http://localhost:8000';
+// Override with VITE_API_URL in frontend/.env (e.g. VITE_API_URL=http://localhost:8000)
+export const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
 
 // Fetch summary active routes (for sidebar counts or route options)
 export async function fetchRoutes() {
@@ -76,4 +77,9 @@ export async function fetchJourneys({
     console.error('Error fetching journeys:', error);
     throw error;
   }
+}
+// Stop card: the stop, lines serving it, next departures today and typical delay there now
+export async function fetchStopInfo(stopId) {
+  const response = await axios.get(`${API_BASE_URL}/api/stops/${encodeURIComponent(stopId)}`);
+  return response.data;
 }

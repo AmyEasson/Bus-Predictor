@@ -16,7 +16,7 @@ Cleaning is built in (counts printed at the end):
   - delays outside [--min-delay, --max-delay] seconds are dropped
 
 Usage (from trip_matching/):
-  python3 arrivals.py --snapshot ../../snapshot.sqlite --gtfs-dir ../.. --out-dir out
+  python3 arrivals.py --snapshot ../../data/snapshot.sqlite --gtfs-dir ../../data --out-dir out
 Output: out/stop_arrivals.parquet
 """
 import argparse
@@ -51,10 +51,26 @@ def load_fixes(snapshot, matched):
     return df[["run_id", "t", "latitude", "longitude"]].sort_values(["run_id", "t"])
 
 
+def _plausible(t, x, y, i, j, max_speed):
+    dt = t[j] - t[i]
+    return dt > 0 and np.hypot(x[j] - x[i], y[j] - y[i]) / dt <= max_speed
+
+
 def remove_jumps(t, x, y, max_speed):
-    """Drop fixes that imply an impossible speed from the previous kept fix."""
-    keep = [0]
-    for i in range(1, len(t)):
+    """Drop fixes that imply an impossible speed from the previous kept fix.
+
+    Each fix is checked against the last kept one, so the starting fix must be trustworthy:
+    if fix 0 were a bad position, every good fix after it would look like a jump and be dropped
+    until enough time passed. So start from the first fix that is consistent with the fix after it.
+    (Cost: when fix 0 is good but fix 1 is bad, fix 0 is dropped too - one fix, not minutes of them.)
+    """
+    if len(t) == 0:
+        return np.array([], dtype=int)
+    start = 0
+    while start + 1 < len(t) and not _plausible(t, x, y, start, start + 1, max_speed):
+        start += 1
+    keep = [start]
+    for i in range(start + 1, len(t)):
         j = keep[-1]
         dt = t[i] - t[j]
         if dt <= 0:

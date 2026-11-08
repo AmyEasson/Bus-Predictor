@@ -5,6 +5,8 @@ from typing import Optional
 from .database import get_db_connection
 import numpy as np
 from datetime import date
+from .services.prediction import annotate_journeys
+from .services.route_insight import annotate_route_insights
 
 from .services.stops import search_bus_stops
 from .services.journey import (
@@ -60,11 +62,7 @@ def get_routes():
         con.close()
         return df.to_dict(orient="records")
     except Exception as e:
-        return [
-            {"published_line_name": "42", "active_buses": 5},
-            {"published_line_name": "43", "active_buses": 3},
-            {"published_line_name": "142", "active_buses": 4}
-        ]
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/buses/{line_name}")
@@ -171,6 +169,8 @@ def get_journeys(
 
         # Apply the requested limit to the combined results.
         journeys = journeys[:limit]
+        annotate_journeys(journeys, travel_date)
+        annotate_route_insights(journeys, travel_date)  # where/why along the route (delay engine)
 
         # Remove stop details if they were not requested.
         if not include_stops:

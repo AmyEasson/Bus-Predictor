@@ -12,19 +12,21 @@ Output: one file per day, out-dir/arrivals_YYYYMMDD.parquet, plus out-dir/summar
 Days that already have an output file are skipped (use --force to redo, e.g. for a day
 that was still being written when you last ran it).
 
-Usage (from trip_matching/):
-  python3 archive_arrivals.py --archive-dir ../../data/bods_archive --gtfs-dir ../.. \\
-      --out-dir out/archive_arrivals [--from 20260827] [--to 20261106] [--workers 4]
+Usage (from delay_engine/):
+  python3 archival_data/archive_arrivals.py --archive-dir ../data/bods_archive --gtfs-dir ../data \\
+      --out-dir trip_matching/out/archive_arrivals [--from 20260827] [--to 20261106] [--workers 4]
 """
 import argparse
+import sys
 from collections import Counter
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 import numpy as np
 import pandas as pd
 
-# same detection as the live-logger pipeline
-from arrivals import detect_run, EPOCH, TZ
+# same detection as the live-logger pipeline; arrivals.py lives in ../trip_matching/
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "trip_matching"))
+from arrivals import detect_run, EPOCH, TZ  # noqa: E402
 
 COLS = ["trip_id", "route_id", "start_date",
         "lat", "lon", "timestamp", "vehicle_id"]

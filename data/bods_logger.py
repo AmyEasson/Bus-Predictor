@@ -160,6 +160,7 @@ def parse_siri(xml_bytes, polled_at):
         ))
     return rows
 
+
 def fetch(api_key, bbox, timeout=60):
     r = requests.get(
         ENDPOINT,
@@ -170,13 +171,14 @@ def fetch(api_key, bbox, timeout=60):
     return r.content
 
 
+def _inside(r):
+    return (r[16] is not None and r[17] is not None
+            and MIN_LAT <= r[16] <= MAX_LAT and MIN_LON <= r[17] <= MAX_LON)
+
+
 def in_box(rows):
     """Count rows whose position really is inside our box (sanity check)."""
-    return sum(
-        1 for r in rows
-        if r[16] is not None and r[17] is not None
-        and MIN_LAT <= r[16] <= MAX_LAT and MIN_LON <= r[17] <= MAX_LON
-    )
+    return sum(1 for r in rows if _inside(r))
 
 
 def detect_bbox(api_key):
@@ -218,8 +220,7 @@ def poll_once(conn, api_key, bbox):
     try:
         rows = parse_siri(fetch(api_key, bbox), polled_at)
         # Safety net: only store buses that really are inside the box
-        rows = [r for r in rows if r[16] is not None and r[17] is not None
-                and MIN_LAT <= r[16] <= MAX_LAT and MIN_LON <= r[17] <= MAX_LON]
+        rows = [r for r in rows if _inside(r)]
         before = conn.total_changes
         conn.executemany(
             f"INSERT OR IGNORE INTO positions ({','.join(COLUMNS)}) "

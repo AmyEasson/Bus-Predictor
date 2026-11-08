@@ -4,7 +4,7 @@
   service_days.parquet  one row per (service_id, date) the service actually runs
 
 Usage:
-  python3 prep_timetable.py --gtfs-dir path/to/parquet --out-dir out
+  python3 prepare_timetable.py --gtfs-dir ../../data --out-dir out
 """
 import argparse
 from pathlib import Path
