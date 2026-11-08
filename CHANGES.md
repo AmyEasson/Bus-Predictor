@@ -118,6 +118,7 @@ Adds steps 3 and 4 of the trip-matching pipeline: once runs are matched to timet
 - **Extracted `_inside(r)` predicate.** The bounding-box check (lat/lon not None and within the MIN/MAX bounds) was written identically in `in_box()` and inline in `poll_once()`. Both now call a shared `_inside(r)` helper. Note: this change is only in the root copy, not in the tracked `data/bods_logger.py`.
 
 
+
 ## Journey planning and transfer search (2026-11-08)
 
 Adds timetable-based journey planning to the application, supporting both direct bus journeys and journeys involving one transfer.
@@ -149,7 +150,19 @@ Adds timetable-based journey planning to the application, supporting both direct
   - Displays the interchange stop and transfer waiting time.
   - Provides expandable journey-leg and stop information.
   - Supports selecting a journey for further inspection.
+  - Integrates delay prediction information into journey cards, including predicted arrival times, delay risk levels and connection warnings.
+  - Adds journey ranking and sorting, including most reliable and earliest departure options.
+
+- **Journey map visualisation** (`BusMap.jsx`):
+  - Draws the selected journey's route using its stop coordinates.
+  - Displays markers for each stop along the journey.
+  - Automatically adjusts the map viewport to fit the selected route.
+  - Updates the route and map bounds when a different journey is selected.
+  - Highlights origin, destination and interchange stops using distinct marker colours.
+  - Displays stop information and arrival times in map popups.
+  - Preserves live bus markers and stop hover previews when no journey is selected.
 
 ### Changed
 
 - Updated the frontend journey result rendering to accommodate both direct and transfer journey response structures while preserving existing direct journey functionality.
+- Updated the map component to respond dynamically to journey selection rather than remaining at its initial default viewport.

@@ -5,6 +5,7 @@ from typing import Optional
 from .database import get_db_connection
 import numpy as np
 from datetime import date
+from .services.prediction import annotate_journeys
 
 from .services.stops import search_bus_stops
 from .services.journey import (
@@ -167,6 +168,7 @@ def get_journeys(
 
         # Apply the requested limit to the combined results.
         journeys = journeys[:limit]
+        annotate_journeys(journeys, travel_date)
 
         # Remove stop details if they were not requested.
         if not include_stops:
