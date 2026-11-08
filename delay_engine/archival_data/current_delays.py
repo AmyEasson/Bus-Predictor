@@ -13,7 +13,7 @@ Outputs in --out-dir: current_delays.csv and current_delays.json (for the UI), p
 
 Usage (from delay_engine/):
   python3 archival_data/current_delays.py --analysis-dir trip_matching/out/analysis \\
-      --rw-dir trip_matching/out/roadworks [--as-of "2026-11-06 08:30"] [--stops ../stops.parquet] [--routes ../routes.parquet]
+      --rw-dir trip_matching/out/roadworks [--as-of "2026-11-06 08:30"] [--stops ../data/stops.parquet] [--routes ../data/routes.parquet]
 """
 import argparse
 import json

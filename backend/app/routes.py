@@ -60,11 +60,7 @@ def get_routes():
         con.close()
         return df.to_dict(orient="records")
     except Exception as e:
-        return [
-            {"published_line_name": "42", "active_buses": 5},
-            {"published_line_name": "43", "active_buses": 3},
-            {"published_line_name": "142", "active_buses": 4}
-        ]
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/buses/{line_name}")

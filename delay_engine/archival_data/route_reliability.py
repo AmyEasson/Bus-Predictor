@@ -9,7 +9,7 @@ Outputs in --out-dir: route_reliability.csv (overall) and route_reliability_by_b
 
 Usage (from delay_engine/):
   python3 archival_data/route_reliability.py --analysis-dir trip_matching/out/analysis \\
-      --out-dir trip_matching/out/reliability --routes ../routes.parquet
+      --out-dir trip_matching/out/reliability --routes ../data/routes.parquet
 """
 import argparse
 from pathlib import Path

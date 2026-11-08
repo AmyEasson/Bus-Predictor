@@ -5,10 +5,11 @@ import sqlite3
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "snapshot.sqlite"
 
-print(f"--> Looking for database at: {DB_PATH.resolve()}")
-print(f"--> Does file exist? {DB_PATH.exists()}")
 
 def get_db_connection():
+    # sqlite3.connect would silently create an empty DB at a wrong path, so fail loudly instead
+    if not DB_PATH.exists():
+        raise FileNotFoundError(f"snapshot database not found at {DB_PATH}")
     con = sqlite3.connect(DB_PATH)
     con.row_factory = sqlite3.Row
     return con

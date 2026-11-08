@@ -9,7 +9,7 @@ Three passes, strongest first. Each result records match_method:
                   departure within --ftol seconds, only if there is a clear single winner
 
 Usage:
-  python3 matcher.py --snapshot snapshot.sqlite --out-dir out [--lines 42,43] [--tol 0] [--jtol 120] [--ftol 300]
+  python3 matcher.py --snapshot ../../data/snapshot.sqlite --out-dir out [--lines 42,43] [--tol 0] [--jtol 120] [--ftol 300]
 Outputs in out-dir: runs_matched.parquet, runs_ambiguous.parquet, runs_unmatched.parquet
 """
 import argparse

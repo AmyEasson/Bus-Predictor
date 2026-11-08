@@ -1,5 +1,31 @@
 # Changelog
 
+## Repo cleanup (2026-11-08)
+
+### Removed
+
+- **`backend/engine/`.** It was a copy of `delay_engine/trip_matching/` (identical scripts and `out/` files) plus `compute_delays.py`. Nothing imported it. `delay_engine/` is now the only copy of the pipeline. `compute_delays.py` is gone with it: its clock-change handling was already ported into `arrivals.py`, and the file is still in git history.
+- **`backend/app/models.py`**, which was empty.
+- **Untracked root-level duplicates:** six GTFS parquets (byte-identical to `data/`), `snapshot_loop.py` (still in git history at `29c4043~1`) and `bods_logger.py` (moved over `data/bods_logger.py`, see below).
+
+### Fixed
+
+- **Bad first GPS fix (`arrivals.py`, `remove_jumps`).** Each fix was checked against the last kept one, starting from fix 0 unconditionally. A bad first fix therefore stayed in, and the good fixes after it were dropped until enough time passed for the jump to look possible: about 2 minutes of fixes for a 3 km error. Filtering now starts from the first fix that agrees with the one after it. `archive_arrivals.py` uses the same function, so it also benefits.
+- **`archive_arrivals.py` couldn't import `arrivals.py`.** The two scripts are in different folders, so `from arrivals import ...` only worked with a manual `PYTHONPATH`. The script now adds `../trip_matching` to `sys.path` itself.
+- **Usage lines pointed at deleted root files.** They now point at `data/`: `--gtfs-dir ../../data`, `--stops ../data/stops.parquet`, and so on. `archive_arrivals.py` now says to run it from `delay_engine/`, like the other archive scripts.
+- **`/api/routes` returned made-up data on any error.** It now returns a 500 like the other endpoints.
+- **`database.py`** no longer prints on import. It raises a clear error if `data/snapshot.sqlite` is missing, instead of letting `sqlite3` create an empty database at that path.
+- **Misleading planner note.** "Delay predictions on: uses live bus positions, weather and local events" now says journeys show timetable times only, until the delay engine is connected.
+- **Stale `current_delays.json`.** It was re-run with the same `as_of` (2026-10-29 07:45 UTC). The old file had explanations like "53 min late 0 min earlier" from before the 5-minute guard was added.
+
+### Changed
+
+- **`data/bods_logger.py`** now has the `_inside(r)` bounding-box helper, which was previously only in the root copy.
+- **One API base URL for the frontend.** `api.js` exports `API_BASE_URL`, read from `VITE_API_URL` with `http://localhost:8000` as the default. `delayApi.js` now uses it and axios, instead of its own `fetch` and base URL. Note that `VITE_API_URL` no longer includes `/api`.
+- **`.gitignore`.** Removed the `*.paraquet` typo, the meaningless `data/snapshot.sqlite/*.parquet` rule and the duplicate `__pycache__/`. Added `.vscode`, and grouped the rules with comments. Files that are already tracked (`data/snapshot.sqlite`, `trip_matching/out/*`) are unaffected by the ignore rules.
+- **`requirements.txt`** adds `pyarrow`, `pyproj` and `scipy`, which the roadworks scripts use.
+- **`README.md`** now has run commands for the backend and frontend, the correct frontend port (5173) and a map of the repo layout.
+
 ## Stop arrivals and segment delays (2026-11-07)
 
 Adds steps 3 and 4 of the trip-matching pipeline: once runs are matched to timetable trips, work out when each bus reached each stop, then roll those up into per-segment delay stats.
