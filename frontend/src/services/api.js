@@ -78,3 +78,8 @@ export async function fetchJourneys({
     throw error;
   }
 }
+// Stop card: the stop, lines serving it, next departures today and typical delay there now
+export async function fetchStopInfo(stopId) {
+  const response = await axios.get(`${API_BASE_URL}/api/stops/${encodeURIComponent(stopId)}`);
+  return response.data;
+}

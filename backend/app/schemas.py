@@ -7,6 +7,7 @@ Band = Literal["on_time", "minor", "moderate", "severe"]
 FactorKey = Literal["weather", "time_of_day", "events"]
 ColourBy = Literal["overall", "weather", "time_of_day", "events"]
 RiskLevel = Literal["low", "medium", "high"]
+DayType = Literal["weekday", "weekend"]
 
 
 class Stop(BaseModel):
@@ -26,8 +27,10 @@ class Status(BaseModel):
 class NetworkSummary(BaseModel):
     as_of: datetime
     pct_on_time: int
-    delayed_over_5min: int
+    delayed_over_5min: int  # buses more than 5 min late during the hour, on a typical day
     avg_delay_minutes: float
+    day_type: DayType | None = None
+    buses: int | None = None  # buses seen during the hour, on a typical day
 
 
 class Vehicle(BaseModel):
@@ -41,8 +44,8 @@ class Vehicle(BaseModel):
 
 class Weather(BaseModel):
     summary: str
-    temp_c: float
-    wind_kmh: float
+    temp_c: float | None = None  # None: no live weather feed
+    wind_kmh: float | None = None
 
 
 class EventInfo(BaseModel):
@@ -75,6 +78,20 @@ class Segment(BaseModel):
     delay_minutes: float
     band: Band
     breakdown: dict[str, float]
+    lines: str | None = None  # comma-separated route numbers using the stretch
+    observations: int | None = None  # bus passes behind the numbers
+
+
+class Hex(BaseModel):
+    id: str  # axial "q,r"
+    path: list[list[float]]  # 6 corners, [[lat, lon], ...]
+    delay_minutes: float
+    band: Band
+    breakdown: dict[str, float]
+    observations: int  # bus passes behind the number
+    worst_stretch: str
+    worst_stretch_minutes: float
+    lines: str
 
 
 class Callout(BaseModel):
@@ -106,9 +123,15 @@ class DelayMap(BaseModel):
     as_of: datetime
     hour: int
     colour_by: ColourBy
+    day_type: DayType | None = None
+    data_from: str | None = None  # archive window the numbers come from
+    data_to: str | None = None
+    data_days: int | None = None
     conditions: Conditions
     factors: list[Factor]
     hourly: list[HourBar]
+    hex_m: int | None = None  # hexagon width in metres
+    hexes: list[Hex] = []
     segments: list[Segment]
     worst: list[WorstSegment]
     legend: list[LegendItem]

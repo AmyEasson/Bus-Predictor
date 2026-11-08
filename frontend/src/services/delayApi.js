@@ -11,10 +11,19 @@ export const BAND_COLOUR = {
 // Same thresholds as the backend: under 2 min, 2-5, 5-8, 8+
 export const bandOf = (m) => (m < 2 ? 'on_time' : m < 5 ? 'minor' : m < 8 ? 'moderate' : 'severe');
 
-export async function fetchDelayMap({ hour, colourBy = 'overall', factors }) {
+// Typical network performance for an hour (historical: from the archive window, not live)
+export async function fetchNetworkSummary({ hour } = {}) {
+  const res = await axios.get(`${API_BASE_URL}/api/network/summary`, { params: hour != null ? { hour } : {} });
+  return res.data;
+}
+
+export async function fetchDelayMap({ hour, colourBy = 'overall', factors, dayType, hexM, bbox }) {
   const params = { colour_by: colourBy };
   if (hour != null) params.hour = hour;
   if (factors) params.factors = factors.join(',');
+  if (dayType) params.day_type = dayType;
+  if (hexM) params.hex_m = hexM;
+  if (bbox) params.bbox = bbox;
   try {
     const res = await axios.get(`${API_BASE_URL}/api/delay-map`, { params });
     return res.data;

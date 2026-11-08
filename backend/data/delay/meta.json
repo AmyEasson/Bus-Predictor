@@ -1,0 +1,131 @@
+{
+ "data_from": "2026-08-27",
+ "data_to": "2026-11-06",
+ "days": 70,
+ "arrivals": 37013793,
+ "stretch_observations": 25406749,
+ "segments": 276574,
+ "unique_stretches": 14704,
+ "min_n": 10,
+ "venue_km": 1.5,
+ "effects": {
+  "rain": [
+   {
+    "rain": "dry",
+    "n": 4333904,
+    "mean_excess_s": 4.4,
+    "median_excess_s": 0.0,
+    "ci95_s": 0.0
+   },
+   {
+    "rain": "light (<0.5mm/h)",
+    "n": 2075374,
+    "mean_excess_s": 4.4,
+    "median_excess_s": 0.0,
+    "ci95_s": 0.1
+   },
+   {
+    "rain": "moderate (0.5-2)",
+    "n": 420371,
+    "mean_excess_s": 5.0,
+    "median_excess_s": 0.0,
+    "ci95_s": 0.1
+   },
+   {
+    "rain": "heavy (>2)",
+    "n": 81871,
+    "mean_excess_s": 4.6,
+    "median_excess_s": -0.2,
+    "ci95_s": 0.3
+   }
+  ],
+  "events_near_venue": [
+   {
+    "event_state": "during",
+    "n": 31993,
+    "mean_excess_s": 6.1,
+    "median_excess_s": 0.3,
+    "ci95_s": 0.5
+   },
+   {
+    "event_state": "no event",
+    "n": 508082,
+    "mean_excess_s": 4.3,
+    "median_excess_s": 0.0,
+    "ci95_s": 0.1
+   },
+   {
+    "event_state": "post",
+    "n": 11245,
+    "mean_excess_s": 9.0,
+    "median_excess_s": 1.4,
+    "ci95_s": 1.0
+   },
+   {
+    "event_state": "pre",
+    "n": 34537,
+    "mean_excess_s": 11.6,
+    "median_excess_s": 1.4,
+    "ci95_s": 0.7
+   }
+  ],
+  "bank_holiday": [
+   {
+    "is_bank_holiday": 0,
+    "n": 6864397,
+    "mean_excess_s": 4.5,
+    "median_excess_s": 0.0,
+    "ci95_s": 0.0
+   },
+   {
+    "is_bank_holiday": 1,
+    "n": 47123,
+    "mean_excess_s": 1.1,
+    "median_excess_s": -1.7,
+    "ci95_s": 0.3
+   }
+  ],
+  "school_term": [
+   {
+    "is_school_term": 0,
+    "n": 1551341,
+    "mean_excess_s": 3.7,
+    "median_excess_s": -0.1,
+    "ci95_s": 0.1
+   },
+   {
+    "is_school_term": 1,
+    "n": 5360179,
+    "mean_excess_s": 4.7,
+    "median_excess_s": 0.0,
+    "ci95_s": 0.0
+   }
+  ],
+  "roadworks": [
+   {
+    "blocking": "none",
+    "n": 10563335,
+    "mean_excess_s": 4.3,
+    "median_excess_s": 0.0,
+    "share_over_60s": 4.8,
+    "ci95_s": 0.0
+   },
+   {
+    "blocking": "other works",
+    "n": 1408828,
+    "mean_excess_s": 4.8,
+    "median_excess_s": 0.1,
+    "share_over_60s": 5.6,
+    "ci95_s": 0.1
+   },
+   {
+    "blocking": "signals/lane/closure",
+    "n": 1172288,
+    "mean_excess_s": 11.0,
+    "median_excess_s": 2.5,
+    "share_over_60s": 9.3,
+    "ci95_s": 0.1
+   }
+  ]
+ }
+}
