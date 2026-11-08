@@ -336,6 +336,20 @@ def get_typical_delay(from_id, to_id, hour, day_type=None):
             "typical_delay_minutes": round(float(r.iloc[0].late_med_s) / 60, 1)}
 
 
+def get_stop_typical(stop_id, hour, day_type=None):
+    """How late buses typically are on arrival at this stop at this hour (bus-pass-weighted over the
+    stretches ending there), or None if there isn't enough data."""
+    weekend = is_weekend(day_type)
+    s = segments()
+    s = s[(s.to_stop_id == stop_id) & (s.is_weekend == int(weekend)) & (s.hour == hour)]
+    n = int(s.n.sum())
+    if n < 20:
+        return None
+    m = float((s.late_med_s * s.n).sum() / n / 60)
+    return {"delay_minutes": round(max(0.0, m), 1), "band": band(max(0.0, m)), "observations": n,
+            "hour": hour, "day_type": "weekend" if weekend else "weekday"}
+
+
 def get_late_buses():
     """Latest output of current_delays.py (a past moment replayed from the archive, see as_of_utc)."""
     return json.loads(_path("current_delays.json").read_text())

@@ -29,7 +29,7 @@ cd delay_engine && python3 export_for_api.py --analysis-dir trip_matching/out/an
 ## Layout
 | Path | What it is |
 |---|---|
-| `frontend/` | React + Leaflet app (journey planner tab, delay map tab) |
+| `frontend/` | React + Leaflet app: full-screen map with stop search, stop cards, directions with delay predictions, and a delay-hexagon layer |
 | `backend/app/` | FastAPI app. `routes.py` = real endpoints (stops, journeys, live buses); `mock_routes.py` + `mock_data.py` = placeholder delay endpoints in their final response shapes (`schemas.py`) |
 | `data/` | GTFS timetable as parquet, `snapshot.sqlite` (live logger snapshot), `bods_logger.py` (the live logger) |
 | `delay_engine/trip_matching/` | Live pipeline: `prepare_timetable.py` -> `matcher.py` -> `arrivals.py` -> `segments.py` |

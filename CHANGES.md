@@ -1,5 +1,63 @@
 # Changelog
 
+## Delay insights back in the app (2026-11-08)
+
+Brings the original design's delay features into the maps-style layout, backed by real data. The design's live weather ("light rain") and Christmas Markets aren't included: there's no live weather feed, and the events calendar only covers football and concerts.
+
+### Backend
+
+- **`services/route_insight.py`.** `/api/journeys` now adds `journey["insight"]` next to Amy's `journey["prediction"]`. For every stretch the journey rides, at its scheduled time and day type, it looks up the delay engine's stretch table and returns:
+  - `stretches`: each coloured by typical lateness, for drawing the route
+  - `typical_late_min`
+  - `risk_pct`: the chance at least one leg's bus is more than 5 min late at that time of day, from `route_reliability_by_band.csv`, keyed by each leg's real `route_id`
+  - `factors`: time of day; rain, using the network-wide measured effect because per-stretch estimates summed over a route are noise; and events, only when one is actually on near the route within its 2 h window
+  - `worst`: the stretch where buses lose most time
+  - a where/why `explanation`
+  - `coverage` and `confidence`
+
+  This adds about 0.05 s per search. A failure never breaks the journey list.
+
+### Frontend
+
+- **Route cards.** Each shows its tag (Most reliable / Balanced / Fastest on paper), arrival time, total minutes ("27 min · timetable 21 · +6 predicted"), lines, a delay-risk chip and bar with %, the reason, and "Route details" / "View on delay map". Ranking (`routeRanking.js`) uses the model's p90 when there is one and falls back to history, so routes are still ranked when the model isn't loaded. Sorting: most reliable, fastest or earliest.
+- **Map.** Before a pick: most reliable drawn solid blue, fastest on paper dashed red, with a key. After a pick: the route coloured stretch by stretch by typical lateness (grey where there's no data), the alternative faded, and callouts for the slowest stretch and for what the reliable route avoids. The map frames routes clear of the panel.
+- **Route details.** "Fast vs safe" comparison (only when the fastest and most reliable routes differ), "Why the fastest route is risky" / "What affects this route" factor cards with bars, the slowest stretch, data basis and confidence, Amy's model prediction, then the steps.
+- **Explore.** Network figures for this hour, **Recent** trips (stored in the browser) with "Usually +6 min at 17:00", and a button to explore delays.
+- **Delay layer card ("What's slowing buses?").** Colour by (Overall / Weather / Time / Events), factor switches with minutes, and the worst stretches at the selected hour; clicking one flies to it.
+
+### Known issues
+
+- **Some stops return no routes as a start.** Piccadilly Gardens stop `1800SB01681` gives no routes to anywhere tested (Didsbury, the airport, Belfield Road). It's probably a stand where buses finish. Users can't tell the city-centre stands apart, so stop search could group same-named stops nearby. This needs a change in `journey.py`.
+- **Real fast-vs-safe trade-offs are rarer than in the mockups.** On most tested trips the most reliable route is also the fastest.
+- **Journey search takes about 2.4 s**, mostly finding transfer journeys in `journey.py`.
+
+## Maps-style app (2026-11-08)
+
+The two tabs (Plan / Delay map) are replaced by one full-screen map with a maps-app flow. Amy's `feat/integrate-model` (journey delay predictions, ranking) was merged in first, and the new UI is built on her `PredictionBadge` and `JourneyRanking`.
+
+### Flow
+
+1. **Explore:** a floating "Search bus stops" box with a directions button, and a card with typical figures for this hour.
+2. **Pick a stop:** the stop card shows its lines, which way it serves ("towards …"), typical lateness there now, the next timetabled departures, and **Directions** / **Start here**.
+3. **Directions:** From and To boxes with a swap button; "Leave now / Depart at / Arrive by" with date and time. It searches as soon as both stops are set, and again when the time changes. Results are ranked by Amy's predictions ("Most reliable first" / "Earliest first") and show times, duration, line chips, the expected delay, the arrival time to plan around ("safe by"), and connection warnings.
+4. **Pick a route:** a step-by-step timeline (board, ride N stops with the stops listed, change and wait, get off). The route is drawn on the map with the change stop marked.
+5. **Layers button:** switches the delay hexagons on in any mode. A bottom bar then shows weekday/weekend, an hour-of-day timeline coloured by typical delay, the legend and the data window. The popover lists what was measured: weather, time of day and events.
+
+### Backend
+
+- **`GET /api/stops/{stop_id}`** (`stop_routes.py`, `services/stop_info.py`): the stop, its lines and direction, today's next departures from now, and typical lateness there at this hour (`delay.get_stop_typical`).
+- **Stop search results now include `towards` and `lines`.** 86% of stop names are shared by several stops; Belfield Road alone is four different stops. These come from a per-stop summary built once from the timetable, which is loaded in the background at startup (`main.py` lifespan), so the first search is no longer about 4 s slow.
+
+### Fixed
+
+- **Map snapping back to the centre.** `BusMap`'s journey fit (from the merge) re-ran on every render, because `routePositions` is a new array each time, so the map jumped back whenever the app re-rendered. It's now keyed on the route's coordinates.
+- **Typing over a selected stop.** The search box wiped what you typed: typing cleared the selection, and clearing the selection reset the text.
+- **Suggestions cut off.** The floating panel no longer scrolls as a whole, which clipped the suggestion lists; each card scrolls its own content.
+
+### Removed
+
+- `Header.jsx`, `DelayPanel.jsx` and `DelayPanel.css` (the tabs and the old delay sidebar). The old sidebar card styles are removed from `index.css`. The colour-by and factor switches are gone from the UI; the API still supports them.
+
 ## Map visuals (2026-11-08)
 
 - **Hexagons change size with zoom.** They range from 2 km across when zoomed out over the region to 150 m at street level (`hexSizeFor` in `App.jsx`; the allowed sizes are `HEX_SIZES` in `services/delay.py`). At zoom 14 and above, only the visible area is fetched. Each request takes under 0.2 s. They also have a lighter fill (30%) and an outline in their own colour, so the streets stay readable.

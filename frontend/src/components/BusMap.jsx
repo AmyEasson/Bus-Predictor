@@ -7,6 +7,7 @@ import {
   Popup,
   CircleMarker,
   Polyline,
+  ZoomControl,
   useMap,
 } from 'react-leaflet';
 import L from 'leaflet';
@@ -58,9 +59,44 @@ function JourneyMapUpdater({ routePositions }) {
   return null;
 }
 
+// A pin for a chosen stop (the searched place, or the start / end of directions).
+const pinIcon = (kind) => L.divIcon({
+  className: 'stop-pin-wrap',
+  html: `<div class="stop-pin ${kind}"><div></div></div>`,
+  iconSize: [28, 36],
+  iconAnchor: [14, 34],
+});
+
+// Pans to a stop when it is picked from search (keyed on the stop id, not the object).
+function FocusStop({ stop }) {
+  const map = useMap();
+  const id = stop?.stop_id;
+  useEffect(() => {
+    const pos = getStopPosition(stop);
+    if (pos) map.flyTo(pos, Math.max(map.getZoom(), 16), { duration: 0.6 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, id]);
+  return null;
+}
+
+// Frames the start and end of a directions search (before a route is picked), keyed on their ids.
+function FitPins({ pins }) {
+  const map = useMap();
+  const key = pins.map((p) => p.stop.stop_id).join('|');
+  useEffect(() => {
+    const pos = pins.map((p) => getStopPosition(p.stop)).filter(Boolean);
+    if (pos.length === 2) map.fitBounds(L.latLngBounds(pos), { padding: [80, 80], maxZoom: 15 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, key]);
+  return null;
+}
+
 export function BusMap({
   hoveredStop = null,
   selectedJourney = null,
+  pins = [],        // [{ stop, kind: 'place' | 'from' | 'to' }]
+  focusStop = null, // stop (or any {stop_id, stop_lat, stop_lon}) to pan to
+  drawRoute = true, // false when a RouteOverlay child draws the journey line itself
   children,
 }) {
   const journeyStops = selectedJourney?.stops ?? [];
@@ -86,8 +122,13 @@ export function BusMap({
       center={DEFAULT_CENTER}
       zoom={DEFAULT_ZOOM}
       style={{ width: '100%', height: '100%' }}
-      preferCanvas  // draw lines on one canvas instead of 1,500 SVG elements: much smoother pan/zoom
+      preferCanvas  // draw shapes on one canvas instead of thousands of SVG elements: smoother pan/zoom
+      zoomControl={false}
     >
+      {/* bottom right, out from under the floating search panel */}
+      <ZoomControl position="bottomright" />
+      <FocusStop stop={focusStop} />
+      {!selectedJourney && <FitPins pins={pins} />}
       {/* Stadia "Alidade Smooth": pale, low-contrast basemap so the coloured delay lines stand out.
           No API key needed on localhost. To deploy on a real domain, create a free Stadia Maps account
           and add the domain there (no key goes in the code). */}
@@ -97,7 +138,15 @@ export function BusMap({
         attribution='&copy; <a href="https://stadiamaps.com/">Stadia Maps</a> &copy; <a href="https://openmaptiles.org/">OpenMapTiles</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
       />
 
-      <JourneyMapUpdater routePositions={routePositions} />
+      {drawRoute && <JourneyMapUpdater routePositions={routePositions} />}
+
+      {/* Chosen stops (hidden while a journey is drawn; it has its own start/end markers) */}
+      {!selectedJourney && pins.map(({ stop, kind }) => {
+        const pos = getStopPosition(stop);
+        return pos && (
+          <Marker key={`${kind}-${stop.stop_id}`} position={pos} icon={pinIcon(kind)} zIndexOffset={900} />
+        );
+      })}
 
       {/* Stop hover preview */}
       {hoverPosition && (
@@ -118,7 +167,7 @@ export function BusMap({
       )}
 
       {/* Selected journey route */}
-      {routePositions.length > 1 && (
+      {drawRoute && routePositions.length > 1 && (
         <Polyline
           positions={routePositions}
           pathOptions={{

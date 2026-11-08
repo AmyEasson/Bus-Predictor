@@ -6,6 +6,7 @@ from .database import get_db_connection
 import numpy as np
 from datetime import date
 from .services.prediction import annotate_journeys
+from .services.route_insight import annotate_route_insights
 
 from .services.stops import search_bus_stops
 from .services.journey import (
@@ -169,6 +170,7 @@ def get_journeys(
         # Apply the requested limit to the combined results.
         journeys = journeys[:limit]
         annotate_journeys(journeys, travel_date)
+        annotate_route_insights(journeys, travel_date)  # where/why along the route (delay engine)
 
         # Remove stop details if they were not requested.
         if not include_stops:

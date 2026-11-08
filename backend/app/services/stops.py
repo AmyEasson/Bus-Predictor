@@ -49,6 +49,13 @@ def search_bus_stops(search_term: str, limit: int = 10):
         ["priority", "stop_name"]
     ).head(limit)
 
-    return matches[
+    results = matches[
         ["stop_id", "stop_name", "stop_lat", "stop_lon"]
     ].to_dict(orient="records")
+
+    # Many stops share a name: add where buses from each one go and which lines use it.
+    # (Imported here to avoid loading the full timetable just to import this module.)
+    from .stop_info import describe_stop
+    for r in results:
+        r.update(describe_stop(r["stop_id"]))
+    return results
