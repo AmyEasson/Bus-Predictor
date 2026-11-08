@@ -14,3 +14,9 @@ share/
 gtfs/
 data/snapshot.sqlite
 model/models
+bods_archive/
+analysis*.sqlite
+delay_engine/model/out/
+delay_engine/model/models/
+delay_engine/model/figures/
+out_archive/
