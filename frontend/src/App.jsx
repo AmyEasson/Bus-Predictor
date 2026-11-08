@@ -8,6 +8,8 @@ import { fetchAllLiveBuses, searchStops, fetchJourneys } from './services/api';
 import { fetchDelayMap } from './services/delayApi';
 import { DelayPanel, DelayLegend } from './components/DelayPanel';
 import { DelayLayer } from './components/DelayLayer';
+import { PredictionBadge } from './components/PredictionBadge';
+import { rankJourneys, SortPills, JourneyLabel } from './components/JourneyRanking';
 
 // TODO: replace with POST /route once the delay model is connected.
 const SAMPLE_ROUTES = [
@@ -194,6 +196,7 @@ export default function App() {
   const [journeyLoading, setJourneyLoading] = useState(false);
   const [journeyError, setJourneyError] = useState(null);
   const [selectedJourney, setSelectedJourney] = useState(null);
+  const [sortBy, setSortBy] = useState('reliable');
 
   // Load live bus positions.
   useEffect(() => {
@@ -359,6 +362,7 @@ export default function App() {
                 </p>
               </div>
 
+              <SortPills value={sortBy} onChange={setSortBy} />
               {journeys.length === 0 ? (
                 <div className="note">
                   <div>
@@ -367,7 +371,7 @@ export default function App() {
                   </div>
                 </div>
               ) : (
-                journeys.map((journey) => {
+                rankJourneys(journeys, sortBy).map((journey) => {
                   const isTransfer = journey.journey_type === 'transfer';
                   const journeyKey = getJourneyKey(journey);
                   const isSelected =
@@ -387,6 +391,7 @@ export default function App() {
                       }}
                     >
                       <div className="card-top">
+                        <JourneyLabel journey={journey} />
                         {isTransfer ? (
                           <>
                             <span className="line-tag">
@@ -434,6 +439,7 @@ export default function App() {
                         </div>
                       )}
 
+                      <PredictionBadge prediction={journey.prediction} />
                       {isTransfer && (
                         <details>
                           <summary>Journey details</summary>
