@@ -3,7 +3,7 @@ import './App.css';
 import { Header } from './components/Header';
 import 'leaflet/dist/leaflet.css';
 import { BusMap } from './components/BusMap';
-import { fetchAllLiveBuses, searchStops } from './services/api';
+import { fetchAllLiveBuses, searchStops, fetchJourneys } from './services/api';
 import { fetchDelayMap } from './services/delayApi';
 import { DelayPanel, DelayLegend } from './components/DelayPanel';
 import { DelayLayer } from './components/DelayLayer';
@@ -141,6 +141,10 @@ export default function App() {
   const [delay, setDelay] = useState(null);
   const [delayErr, setDelayErr] = useState(null);
 
+  const [journeys, setJourneys] = useState([]);
+  const [journeyLoading, setJourneyLoading] = useState(false);
+  const [journeyError, setJourneyError] = useState(null);
+
   useEffect(() => {
     const load = async () => {
       try { setRows(await fetchAllLiveBuses()); } finally { setFirstLoad(false); }
@@ -160,6 +164,36 @@ export default function App() {
   }, [tab, hour, colourBy, factors]);
 
   const toggleFactor = (k) => setFactors((f) => (f.includes(k) ? f.filter((x) => x !== k) : [...f, k]));
+
+  const handleSearch = async () => {
+  setJourneyLoading(true);
+  setJourneyError(null);
+
+  // Format today's date using local time
+  const today = new Date();
+  const travelDate = [
+    today.getFullYear(),
+    String(today.getMonth() + 1).padStart(2, '0'),
+    String(today.getDate()).padStart(2, '0'),
+  ].join('-');
+
+  try {
+    const response = await fetchJourneys({
+      originStopId: fromStop.stop_id,
+      destinationStopId: toStop.stop_id,
+      travelDate,
+      limit: 10,
+      includeStops: true,
+    });
+
+    setJourneys(response.journeys);
+    setSearched(true);
+  } catch (error) {
+    setJourneyError('Could not find journeys. Please try again.');
+  } finally {
+    setJourneyLoading(false);
+  }
+};
 
   // One marker per vehicle (newest fix), and the time of the newest fix overall.
   const { buses, asOf } = useMemo(() => {
@@ -184,9 +218,64 @@ export default function App() {
           ) : searched ? (
             <>
               <button className="back" onClick={() => setSearched(false)}>← Edit search</button>
-              <div><h1>{fromStop.stop_name} to {toStop.stop_name}</h1><p className="sub">3 routes · {timeMode.toLowerCase()}</p></div>
-              <div className="note warn"><div><strong>Sample results</strong>Not real predictions yet.</div></div>
-              {SAMPLE_ROUTES.map((r) => <RouteCard key={r.id} r={r} />)}
+              <div>
+  <h1>{fromStop.stop_name} to {toStop.stop_name}</h1>
+  <p className="sub">
+    {journeys.length} direct journeys found
+  </p>
+</div>
+
+{journeyError && (
+  <div className="note warn">
+    <div><strong>Search error</strong>{journeyError}</div>
+  </div>
+)}
+
+{journeys.length === 0 ? (
+  <div className="note">
+    <div><strong>No journeys found</strong>
+      Try different stops or another travel date.
+    </div>
+  </div>
+    ) : (
+      journeys.map((journey) => (
+        <div className="card" key={journey.trip_id}>
+          <div className="card-top">
+            <span className="line-tag">Route {journey.route}</span>
+            <span className="chip green">Direct</span>
+          </div>
+
+          <div className="big">
+            {journey.duration_minutes} min
+          </div>
+
+          <div className="meta">
+            <span>
+              {journey.departure_time.slice(0, 5)}
+              {' → '}
+              {journey.arrival_time.slice(0, 5)}
+            </span>
+            <span>{journey.destination}</span>
+          </div>
+
+          {journey.stops && (
+            <details>
+              <summary>View stops ({journey.stops.length})</summary>
+              <div className="journey-stops">
+                {journey.stops.map((stop) => (
+                  <div key={`${journey.trip_id}-${stop.stop_sequence}`}>
+                    {stop.stop_name}
+                    <span>
+                      {stop.arrival_time?.slice(0, 5)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
+        </div>
+      ))
+    )}
             </>
           ) : (
             <>
@@ -213,10 +302,10 @@ export default function App() {
               </div>
               <button
                 className="cta"
-                disabled={!fromStop || !toStop}
-                onClick={() => setSearched(true)}
+                disabled={!fromStop || !toStop || journeyLoading}
+                onClick={handleSearch}
               >
-                Find routes
+                {journeyLoading ? 'Searching...' : 'Find routes'}
               </button>
               <div className="note"><span className="dot" style={{ marginTop: 4, flex: 'none' }} /><div><strong>Delay predictions on</strong>Uses live bus positions, weather and local events</div></div>
               <div className="section">Network right now</div>

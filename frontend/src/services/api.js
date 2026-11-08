@@ -47,3 +47,33 @@ export async function searchStops(query) {
     return [];
   }
 }
+
+// Search for direct bus journeys
+export async function fetchJourneys({
+  originStopId,
+  destinationStopId,
+  travelDate,
+  limit = 10,
+  departureAfter = null,
+  arriveBy = null,
+  includeStops = true,
+}) {
+  try {
+    const response = await axios.get(`${API_BASE_URL}/api/journeys`, {
+      params: {
+        origin_stop_id: originStopId,
+        destination_stop_id: destinationStopId,
+        travel_date: travelDate,
+        limit,
+        departure_after: departureAfter || undefined,
+        arrive_by: arriveBy || undefined,
+        include_stops: includeStops,
+      },
+    });
+
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching journeys:', error);
+    throw error;
+  }
+}
